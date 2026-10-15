@@ -6,8 +6,9 @@ export type AIProvider =
   | 'deepseek' 
   | 'custom';
 
-export type SubtitlePreset = 'hormozi' | 'minimalist' | 'neon' | 'custom';
-export type SubtitleFont = 'Montserrat' | 'Impact' | 'Inter' | 'Arial Black' | 'Comic Sans MS';
+export type SubtitlePreset = 'hormozi' | 'neon' | 'minimalist' | 'card' | 'comic';
+export type SubtitleFont = 'Montserrat' | 'Impact' | 'Inter' | 'Arial Black' | 'Comic Sans MS' | 'Bebas Neue';
+export type AspectRatio = '9:16' | '1:1' | '16:9';
 
 export interface AISettings {
   provider: AIProvider;
@@ -18,7 +19,7 @@ export interface AISettings {
 
 export interface SubtitleWord {
   word: string;
-  start: number; // in seconds relative to clip
+  start: number; // seconds relative to clip
   end: number;
   emoji?: string;
 }
@@ -31,9 +32,30 @@ export interface SubtitleSegment {
   words: SubtitleWord[];
 }
 
+export interface SubtitleStyleConfig {
+  fontFamily: SubtitleFont;
+  fontSize: number;
+  textColor: string;
+  highlightColor: string;
+  preset: SubtitlePreset;
+  boxStyle: 'pill' | 'card' | 'glow' | 'minimal';
+  position: 'bottom' | 'middle' | 'top';
+  letterSpacing: string;
+  uppercase: boolean;
+}
+
+export interface BrandingConfig {
+  showHookBanner: boolean;
+  hookBannerText: string;
+  showWatermark: boolean;
+  watermarkText: string;
+  watermarkPosition: 'bottom-right' | 'bottom-left' | 'top-right' | 'top-left';
+}
+
 export interface ViralClip {
-  rank: number; // 1 to 5
-  viralScore: number; // e.g. 98, 95, 91
+  id: string;
+  rank: number;
+  viralScore: number;
   title: string;
   hookHeadline: string;
   reasonWhyViral: string;
@@ -46,19 +68,33 @@ export interface ViralClip {
     caption: string;
     hashtags: string[];
   };
+  isSelected?: boolean;
 }
 
-export interface AIAnalysisResult {
-  totalClipsFound: number;
+export interface VideoProject {
+  id: string;
+  name: string;
+  createdAt: number;
+  updatedAt: number;
+  sourceType: 'youtube' | 'local';
+  sourceUrl?: string;
+  localVideoUrl?: string;
+  youtubeId?: string;
+  thumbnailUrl: string;
+  totalDurationSec: number;
+  clipLength: 30 | 60 | 90;
+  highlightFocus: 'emotional' | 'engagement' | 'curiosity';
   clips: ViralClip[];
-  selectedClipIndex: number;
+  selectedClipId: string;
+  styleConfig: SubtitleStyleConfig;
+  brandingConfig: BrandingConfig;
 }
 
-export interface SSEMessage {
-  step: 'downloading' | 'analyzing' | 'transcribing' | 'rendering' | 'completed' | 'error';
+export interface BackendJobStatus {
+  jobId: string;
+  status: 'queued' | 'processing' | 'completed' | 'failed';
   progress: number;
   message: string;
-  data?: {
-    analysis?: AIAnalysisResult;
-  };
+  resultUrl?: string;
+  error?: string;
 }
