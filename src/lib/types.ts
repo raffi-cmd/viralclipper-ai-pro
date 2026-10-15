@@ -6,7 +6,8 @@ export type AIProvider =
   | 'deepseek' 
   | 'custom';
 
-export type SubtitlePreset = 'hormozi' | 'minimalist' | 'neon';
+export type SubtitlePreset = 'hormozi' | 'minimalist' | 'neon' | 'custom';
+export type SubtitleFont = 'Montserrat' | 'Impact' | 'Inter' | 'Arial Black' | 'Comic Sans MS';
 
 export interface AISettings {
   provider: AIProvider;
@@ -15,18 +16,9 @@ export interface AISettings {
   modelName?: string;
 }
 
-export interface VideoProcessRequest {
-  url: string;
-  targetDuration: 30 | 60 | 120 | 300; // in seconds
-  preset: SubtitlePreset;
-  hookTitle?: string;
-  watermarkText?: string;
-  settings: AISettings;
-}
-
 export interface SubtitleWord {
   word: string;
-  start: number; // in seconds
+  start: number; // in seconds relative to clip
   end: number;
   emoji?: string;
 }
@@ -39,11 +31,15 @@ export interface SubtitleSegment {
   words: SubtitleWord[];
 }
 
-export interface AIAnalysisResult {
-  hookStart: number; // in seconds
-  hookEnd: number;
-  reasoning: string;
-  detectedLanguage: string;
+export interface ViralClip {
+  rank: number; // 1 to 5
+  viralScore: number; // e.g. 98, 95, 91
+  title: string;
+  hookHeadline: string;
+  reasonWhyViral: string;
+  startSec: number;
+  endSec: number;
+  durationSec: number;
   subtitles: SubtitleSegment[];
   copywriting: {
     hookHeadline: string;
@@ -52,13 +48,17 @@ export interface AIAnalysisResult {
   };
 }
 
+export interface AIAnalysisResult {
+  totalClipsFound: number;
+  clips: ViralClip[];
+  selectedClipIndex: number;
+}
+
 export interface SSEMessage {
   step: 'downloading' | 'analyzing' | 'transcribing' | 'rendering' | 'completed' | 'error';
-  progress: number; // 0 - 100
+  progress: number;
   message: string;
   data?: {
-    videoUrl?: string;
     analysis?: AIAnalysisResult;
-    duration?: number;
   };
 }
