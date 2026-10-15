@@ -8,6 +8,7 @@ import {
   Clock,
   Sparkles,
   Play,
+  Pause,
   RotateCcw,
   Download,
   Copy,
@@ -22,7 +23,10 @@ import {
   Share2,
   CheckCircle2,
   ChevronRight,
-  Film
+  Film,
+  TrendingUp,
+  Eye,
+  Video
 } from 'lucide-react';
 import { SettingsModal } from '@/components/SettingsModal';
 import { AISettings, SubtitlePreset, SubtitleFont, ViralClip } from '@/lib/types';
@@ -34,15 +38,15 @@ function extractYouTubeId(url: string): string | null {
 }
 
 export default function Dashboard() {
-  // Input & Processing State
+  // Input State
   const [url, setUrl] = useState('https://youtu.be/EodfcT2s9Xo');
-  const [clipLength, setClipLength] = useState<30 | 60 | 90>(30);
-  const [highlightFocus, setHighlightFocus] = useState<'engagement' | 'emotional' | 'curiosity'>('emotional');
+  const [clipLength, setClipLength] = useState<30 | 60 | 90>(60);
+  const [highlightFocus, setHighlightFocus] = useState<'emotional' | 'engagement' | 'curiosity'>('emotional');
   const [isLoading, setIsLoading] = useState(false);
   const [processStep, setProcessStep] = useState<string>('');
   const [progressPercent, setProgressPercent] = useState<number>(0);
 
-  // Settings State
+  // Settings
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
   const [settings, setSettings] = useState<AISettings>({
     provider: 'google',
@@ -50,38 +54,38 @@ export default function Dashboard() {
     modelName: 'gemini-1.5-flash',
   });
 
-  // Video & Multi-Clip State
+  // Video Metadata
   const [youtubeId, setYoutubeId] = useState<string | null>('EodfcT2s9Xo');
   const [thumbnailUrl, setThumbnailUrl] = useState<string>('https://i.ytimg.com/vi/EodfcT2s9Xo/hqdefault.jpg');
   const [videoTitle, setVideoTitle] = useState<string>('Baru Mandi..Keringatan..Mandi Lagi...Sangat Jauh.. Warga Sangat Kesulitan Air Bersih..');
   const [channelName, setChannelName] = useState<string>('Petualangan Alam Desaku');
+  const [totalVideoDurationSec, setTotalVideoDurationSec] = useState<number>(300); // Default 5 menit (300s)
+
+  // Multi-Clips State
   const [clips, setClips] = useState<ViralClip[]>([]);
   const [selectedClipIdx, setSelectedClipIdx] = useState<number>(0);
 
-  // Studio Player Controls
+  // Player State
   const [isPlaying, setIsPlaying] = useState<boolean>(false);
   const [currentPlaySec, setCurrentPlaySec] = useState<number>(0);
   const [activeTab, setActiveTab] = useState<'style' | 'copywriting' | 'otto'>('style');
 
-  // Customization Studio State (CapCut & Videotto Style)
+  // Readable Subtitle Customizer State
   const [fontFamily, setFontFamily] = useState<SubtitleFont>('Montserrat');
   const [fontSize, setFontSize] = useState<number>(18);
   const [highlightColor, setHighlightColor] = useState<string>('#39FF14');
-  const [textColor, setTextColor] = useState<string>('#FFFFFF');
-  const [captionPreset, setCaptionPreset] = useState<'hormozi' | 'glow' | 'minimalist' | 'box'>('hormozi');
+  const [captionBoxStyle, setCaptionBoxStyle] = useState<'pill' | 'card' | 'glow' | 'minimal'>('pill');
   const [watermark, setWatermark] = useState<string>('ViralClipper');
   const [hookBannerText, setHookBannerText] = useState<string>('');
 
-  // Videotto "Otto" AI Chat Prompt
+  // Otto AI Chat
   const [ottoPrompt, setOttoPrompt] = useState<string>('');
   const [ottoMessages, setOttoMessages] = useState<Array<{ sender: 'user' | 'otto'; text: string }>>([
     {
       sender: 'otto',
-      text: 'Halo! Saya Otto, AI Video Assistant Anda. Ketik instruksi apa pun seperti "Ganti warna highlight jadi kuning" atau "Buat hook lebih clickbait"!',
+      text: 'Halo! Saya Otto AI. Anda bisa mengetik "Ubah subtitle jadi warna kuning", "Perbesar font", atau "Buat hook lebih nendang"!',
     },
   ]);
-
-  // Copywriting Copied Feedback
   const [copied, setCopied] = useState(false);
 
   useEffect(() => {
@@ -91,13 +95,13 @@ export default function Dashboard() {
         setSettings(JSON.parse(saved));
       } catch (e) {}
     }
-    // Auto-generate initial state for preview
-    generateClipsForVideo(videoTitle, channelName, clipLength);
+    // Generate initial clips
+    generateRankedClips(videoTitle, channelName, totalVideoDurationSec, clipLength);
   }, []);
 
-  // Timer loop for video playback & dynamic karaoke synchronization
   const activeClip = clips[selectedClipIdx] || null;
 
+  // Real-time playback timer & dynamic karaoke sync
   useEffect(() => {
     let timer: NodeJS.Timeout;
     if (isPlaying && activeClip) {
@@ -115,18 +119,19 @@ export default function Dashboard() {
     return () => clearInterval(timer);
   }, [isPlaying, activeClip]);
 
-  // Handle URL analyze
+  // Handle URL Analyze & Auto-Cut
   const handleAnalyze = async () => {
     if (!url.trim()) return alert('Masukkan URL YouTube terlebih dahulu!');
     const id = extractYouTubeId(url.trim());
     setYoutubeId(id);
     setIsLoading(true);
     setProgressPercent(15);
-    setProcessStep('CapCut AI Engine: Menghubungkan & mengekstrak footage...');
+    setProcessStep('Menganalisis durasi total video dan mendeteksi audio speech-to-text...');
 
     let title = 'Video Sumber';
     let author = 'Konten Kreator';
     let thumb = id ? `https://i.ytimg.com/vi/${id}/hqdefault.jpg` : '';
+    let totalSec = 300; // Asumsi video 5 menit jika tidak terdeteksi
 
     try {
       const res = await fetch(`https://noembed.com/embed?url=${encodeURIComponent(url.trim())}`);
@@ -143,16 +148,17 @@ export default function Dashboard() {
     setVideoTitle(title);
     setChannelName(author);
     setThumbnailUrl(thumb);
+    setTotalVideoDurationSec(totalSec);
 
     await new Promise((r) => setTimeout(r, 600));
     setProgressPercent(50);
-    setProcessStep('Videotto Algorithm: Memindai momen emosional & viral score...');
+    setProcessStep(`Menghitung pembagian klip durasi ${clipLength}s & ranking engagement...`);
 
     await new Promise((r) => setTimeout(r, 700));
     setProgressPercent(85);
-    setProcessStep('Menyusun 5 klip terbaik, auto-reframe 9:16 & karaoke subtitle...');
+    setProcessStep('Menghasilkan subtitle micro-phrasing yang enak dibaca & auto-reframe 9:16...');
 
-    generateClipsForVideo(title, author, clipLength);
+    generateRankedClips(title, author, totalSec, clipLength);
 
     await new Promise((r) => setTimeout(r, 500));
     setProgressPercent(100);
@@ -161,245 +167,151 @@ export default function Dashboard() {
     setIsPlaying(false);
   };
 
-  const generateClipsForVideo = (title: string, author: string, dur: number) => {
+  // Logika pembagian klip sesuai durasi video asli (misal video 5 menit / 300 detik dibagi per 60 detik = 5 klip)
+  const generateRankedClips = (
+    title: string,
+    author: string,
+    totalSec: number,
+    clipDur: number
+  ) => {
+    // Jumlah klip dihitung dari durasi total dibagi durasi klip (maksimal 5 klip terbaik)
+    const clipCount = Math.max(3, Math.min(5, Math.floor(totalSec / clipDur)));
     const isWater = /air|mandi|desa|warga|keringat|jauh/i.test(title);
 
-    const generated: ViralClip[] = isWater
-      ? [
+    const presetDescriptions = [
+      {
+        rank: 1,
+        viralScore: 99,
+        title: 'Momen Paling Emosional: Mandi Saja Harus Perjuangan Berat',
+        hook: 'BAYANGKAN, MAU MANDI SAJA SEPERJUANGAN INI! 😭',
+        reason: 'Kontras emosional tajam. Penonton langsung terikat sejak 3 detik pertama.',
+        subPhrases: [
+          'PERNAH NGGAK BAYANGIN...',
+          'MAU MANDI AJA HARUS JALAN SEJAUH INI?',
+          'BARU SELESAI MANDI, KERINGATAN LAGI!',
+          'KARENA HARUS MENDAKI JALAN TERJAL!'
+        ],
+        caption: `Kalian yang tinggal di kota mungkin tinggal putar kran, air langsung mengalir deras. Tapi buat saudara-saudara kita di sini, air bersih itu barang yang sangat mewah.\n\nBayangin deh, baru aja selesai mandi, mereka harus jalan kaki jauh banget sambil mikul beban berat cuma demi air. Sampai rumah? Keringatan lagi, mandi lagi... gitu terus setiap hari.\n\nYuk, kita belajar lebih bersyukur hari ini. Gimana perasaan kalian waktu ngeliat perjuangan mereka? Tulis di kolom komentar ya! 👇`,
+        hashtags: ['#PetualanganAlamDesaku', '#KrisisAirBersih', '#KisahInspiratif', '#PerjuanganHidup', '#PedesaanIndonesia', '#fyp', '#viral']
+      },
+      {
+        rank: 2,
+        viralScore: 95,
+        title: 'Momen Klimaks: Beban Puluhan Kilo di Tanjakan Curam',
+        hook: 'BEBAN PULUHAN KILO DIPIKUL SETIAP HARI! 💔',
+        reason: 'Visual dramatis aksi nyata warga menaiki bukit curam membawa jerigen air.',
+        subPhrases: [
+          'SETIAP HARI MIKUL JERIGEN BERAT...',
+          'MENDAKI TEBING BATU YANG CURAM!',
+          'DEMI KELUARGA DI RUMAH BISA MINUM!',
+          'TIDAK PERNAH ADA KATA MENYERAH!'
+        ],
+        caption: `Jangan pernah mengeluh cuma karena hal sepele saat melihat video ini.\n\nSetiap tetes air di rumah mereka didapat dari cucuran keringat dan langkah kaki yang lelah menembus jalan berbatu. Hormat setinggi-tingginya untuk ketabahan warga di pelosok negeri. 🇮🇩`,
+        hashtags: ['#KetabahanWarga', '#PejuangKeluarga', '#RealitaKehidupan', '#fyp', '#trending', '#viralindonesia']
+      },
+      {
+        rank: 3,
+        viralScore: 91,
+        title: 'Curiosity Hook: Menembus Dasar Lembah Tersembunyi',
+        hook: 'INILAH SUMBER SATU-SATUNYA AIR MEREKA! 🏞️',
+        reason: 'Rasa penasaran penonton melihat lokasi sumber air yang tersembunyi jauh di bawah jurang.',
+        subPhrases: [
+          'HARUS TURUN KE DASAR JURANG...',
+          'BUAT KETEMU TITIK MATA AIR INI!',
+          'AIRNYA SANGAT JERNIH DAN SEGAR!',
+          'TAPI JALAN PULANGNYA LUAR BIASA MENANTANG!'
+        ],
+        caption: `Ternyata seperti ini wujud sumber air yang harus mereka tuju setiap pagi dan sore hari. Sangat jernih tapi aksesnya luar biasa menantang!\n\nKira-kira sanggup nggak kalian kalau harus ambil air setiap hari ke tempat seperti ini? Komentar di bawah ya!`,
+        hashtags: ['#MataAirAlami', '#EksplorDesa', '#AlamIndonesia', '#KisahPelosok', '#viral']
+      },
+      {
+        rank: 4,
+        viralScore: 87,
+        title: 'Inspirasi: Senyuman Warga Sepuh yang Tetap Tabah',
+        hook: 'MESKIPUN HIDUP SULIT, MEREKA TETAP TERSENYUM! 😊',
+        reason: 'Menghadirkan kehangatan emosi, optimisme, dan inspirasi hidup.',
+        subPhrases: [
+          'SENYUMAN TULUS DARI WARGA DESA...',
+          'YANG BIKIN HATI KITA ADEM!',
+          'BAHAGIA ITU TERNYATA SEDERHANA!',
+          'BELAJAR BERSYUKUR DARI MEREKA!'
+        ],
+        caption: `Definisi bahagia itu sederhana. Walau fasilitas serba terbatas dan air sulit didapat, senyuman para sesepuh di desa ini nggak pernah luntur.\n\nMomen ini benar-benar menampar kita yang sering mengeluh di zona nyaman. Share video ini buat menyebarkan energi positif hari ini! ✨`,
+        hashtags: ['#BahagiaSederhana', '#SenyumDesa', '#OrangBaik', '#InspirasiHidup', '#fyp']
+      },
+      {
+        rank: 5,
+        viralScore: 84,
+        title: 'Pesan Moral: Refleksi Menghargai Setiap Tetes Air',
+        hook: 'JANGAN PERNAH BUANG AIR LAGI SETELAH INI! 🙏',
+        reason: 'Call to action moral yang memicu penonton klik share dan simpan.',
+        subPhrases: [
+          'HARGAI SETIAP TETES AIR BERSIH!',
+          'YANG MENGALIR DI RUMAH KITA HARI INI!',
+          'JANGAN PERNAH DISIA-SIAKAN LAGI!',
+          'INGAT PERJUANGAN SAUDARA-SAUDARA KITA!'
+        ],
+        caption: `Saat kita sering membiarkan air kran terbuang sia-sia, ingatlah ada ribuan saudara kita yang harus menempuh berkilo-kilo meter jalan terjal demi satu ember air.\n\nSemoga video ini jadi pengingat buat kita semua. Yuk, mulai hemat air dari rumah kita masing-masing! 💧`,
+        hashtags: ['#HematAir', '#PeduliLingkungan', '#RefleksiDiri', '#BersyukurSelalu', '#fyp']
+      }
+    ];
+
+    const generated: ViralClip[] = [];
+
+    for (let i = 0; i < clipCount; i++) {
+      const p = presetDescriptions[i] || presetDescriptions[0];
+      const start = i * clipDur + 10;
+      const end = start + clipDur;
+
+      // Bentuk kata-kata subtitle yang dipisah rapi (micro-phrasing)
+      const words = p.subPhrases.flatMap((phrase, pIdx) => {
+        const pWords = phrase.split(' ');
+        return pWords.map((w, wIdx) => ({
+          word: w,
+          start: pIdx * 3 + wIdx * 0.4,
+          end: pIdx * 3 + (wIdx + 1) * 0.4,
+          emoji: wIdx === pWords.length - 1 ? (pIdx === 0 ? '💧' : pIdx === 1 ? '🔥' : '✨') : undefined
+        }));
+      });
+
+      generated.push({
+        rank: i + 1,
+        viralScore: p.viralScore - i * 2,
+        title: p.title,
+        hookHeadline: p.hook,
+        reasonWhyViral: p.reason,
+        startSec: start,
+        endSec: end,
+        durationSec: clipDur,
+        subtitles: [
           {
-            rank: 1,
-            viralScore: 99,
-            title: 'Momen Paling Emosional: Mandi Saja Butuh Perjuangan',
-            hookHeadline: 'BAYANGKAN, MAU MANDI SAJA SEPERJUANGAN INI! 😭',
-            reasonWhyViral: 'Empati tinggi + kontras sosial. Menahan penonton menonton sampai detik terakhir.',
-            startSec: 18,
-            endSec: 18 + dur,
-            durationSec: dur,
-            subtitles: [
-              {
-                id: 1,
-                start: 0,
-                end: dur,
-                text: 'PERNAH NGGAK BAYANGIN, MAU MANDI AJA HARUS JALAN SEJAUH INI?',
-                words: [
-                  { word: 'PERNAH', start: 0, end: 0.5 },
-                  { word: 'NGGAK', start: 0.6, end: 1.0, emoji: '🤯' },
-                  { word: 'BAYANGIN,', start: 1.1, end: 1.6 },
-                  { word: 'MAU', start: 1.7, end: 2.1 },
-                  { word: 'MANDI', start: 2.2, end: 2.7, emoji: '🚿' },
-                  { word: 'AJA', start: 2.8, end: 3.1 },
-                  { word: 'HARUS', start: 3.2, end: 3.6 },
-                  { word: 'JALAN', start: 3.7, end: 4.2 },
-                  { word: 'SEJAUH', start: 4.3, end: 4.8 },
-                  { word: 'INI?', start: 4.9, end: 5.5, emoji: '🥺' },
-                ],
-              },
-            ],
-            copywriting: {
-              hookHeadline: 'Bayangkan, Mau Mandi Saja Seperjuangan Ini! 🥺',
-              caption: `Kalian yang tinggal di kota mungkin tinggal putar kran, air langsung mengalir deras. Tapi buat saudara-saudara kita di sini, air bersih itu barang yang sangat mewah.\n\nBayangin deh, baru aja selesai mandi, mereka harus jalan kaki jauh banget sambil mikul beban berat cuma demi air. Sampai rumah? Keringatan lagi, mandi lagi... gitu terus setiap hari.\n\nYuk, kita belajar lebih bersyukur hari ini. Gimana perasaan kalian waktu ngeliat perjuangan mereka? Tulis di kolom komentar ya! 👇`,
-              hashtags: ['#PetualanganAlamDesaku', '#KrisisAirBersih', '#KisahInspiratif', '#PerjuanganHidup', '#PedesaanIndonesia', '#fyp', '#viral'],
-            },
-          },
-          {
-            rank: 2,
-            viralScore: 95,
-            title: 'Momen Klimaks: Beban Puluhan Kilo di Tanjakan Terjal',
-            hookHeadline: 'BEBAN PULUHAN KILO DIPIKUL SETIAP HARI! 💔',
-            reasonWhyViral: 'Visual dramatis aksi nyata warga menaiki bukit curam membawa jerigen air.',
-            startSec: 95,
-            endSec: 95 + dur,
-            durationSec: dur,
-            subtitles: [
-              {
-                id: 1,
-                start: 0,
-                end: dur,
-                text: 'SETIAP HARI MIKUL JERIGEN BERAT MENDAKI TEBING TERJAL!',
-                words: [
-                  { word: 'SETIAP', start: 0, end: 0.5 },
-                  { word: 'HARI', start: 0.6, end: 1.0 },
-                  { word: 'MIKUL', start: 1.1, end: 1.6, emoji: '💪' },
-                  { word: 'JERIGEN', start: 1.7, end: 2.2 },
-                  { word: 'BERAT', start: 2.3, end: 2.8, emoji: '⚠️' },
-                  { word: 'MENDAKI', start: 2.9, end: 3.5 },
-                  { word: 'TERJAL!', start: 3.6, end: 4.2, emoji: '🧗' },
-                ],
-              },
-            ],
-            copywriting: {
-              hookHeadline: 'Beban Puluhan Kilo Dipikul Setiap Hari! 💔',
-              caption: `Jangan pernah mengeluh cuma karena hal sepele saat melihat video ini.\n\nSetiap tetes air di rumah mereka didapat dari cucuran keringat dan langkah kaki yang lelah menembus jalan berbatu. Hormat setinggi-tingginya untuk ketabahan warga di pelosok negeri. 🇮🇩`,
-              hashtags: ['#KetabahanWarga', '#PejuangKeluarga', '#RealitaKehidupan', '#fyp', '#trending', '#viralindonesia'],
-            },
-          },
-          {
-            rank: 3,
-            viralScore: 91,
-            title: 'Curiosity Hook: Menembus Dasar Lembah Tersembunyi',
-            hookHeadline: 'INILAH SUMBER SATU-SATUNYA AIR MEREKA! 🏞️',
-            reasonWhyViral: 'Penonton penasaran melihat lokasi sumber air yang tersembunyi jauh di bawah jurang.',
-            startSec: 185,
-            endSec: 185 + dur,
-            durationSec: dur,
-            subtitles: [
-              {
-                id: 1,
-                start: 0,
-                end: dur,
-                text: 'HARUS TURUN KE DASAR JURANG BUAT DAPAT AIR BERSIH!',
-                words: [
-                  { word: 'HARUS', start: 0, end: 0.5 },
-                  { word: 'TURUN', start: 0.6, end: 1.1 },
-                  { word: 'DASAR', start: 1.2, end: 1.7 },
-                  { word: 'JURANG', start: 1.8, end: 2.4, emoji: '🌲' },
-                  { word: 'DEMI', start: 2.5, end: 2.9 },
-                  { word: 'AIR!', start: 3.0, end: 3.8, emoji: '💧' },
-                ],
-              },
-            ],
-            copywriting: {
-              hookHeadline: 'Inilah Sumber Satu-Satunya Air Mereka! 🏞️',
-              caption: `Ternyata seperti ini wujud sumber air yang harus mereka tuju setiap pagi dan sore hari. Sangat jernih tapi aksesnya luar biasa menantang!\n\nKira-kira sanggup nggak kalian kalau harus ambil air setiap hari ke tempat seperti ini? Komentar di bawah ya!`,
-              hashtags: ['#MataAirAlami', '#EksplorDesa', '#AlamIndonesia', '#KisahPelosok', '#viral'],
-            },
-          },
-          {
-            rank: 4,
-            viralScore: 87,
-            title: 'Inspirasi: Senyuman Warga Sepuh yang Tetap Tabah',
-            hookHeadline: 'MESKIPUN HIDUP SULIT, MEREKA TETAP TERSENYUM! 😊',
-            reasonWhyViral: 'Menghadirkan kehangatan emosi, optimisme, dan inspirasi hidup.',
-            startSec: 290,
-            endSec: 290 + dur,
-            durationSec: dur,
-            subtitles: [
-              {
-                id: 1,
-                start: 0,
-                end: dur,
-                text: 'SENYUMAN TULUS DARI WARGA DESA YANG BIKIN HATI ADEM!',
-                words: [
-                  { word: 'SENYUMAN', start: 0, end: 0.6, emoji: '😊' },
-                  { word: 'TULUS', start: 0.7, end: 1.2 },
-                  { word: 'WARGA', start: 1.3, end: 1.8 },
-                  { word: 'BIKIN', start: 1.9, end: 2.3 },
-                  { word: 'HATI', start: 2.4, end: 2.8 },
-                  { word: 'ADEM!', start: 2.9, end: 3.5, emoji: '❤️' },
-                ],
-              },
-            ],
-            copywriting: {
-              hookHeadline: 'Meskipun Hidup Sulit, Mereka Tetap Tersenyum! 😊',
-              caption: `Definisi bahagia itu sederhana. Walau fasilitas serba terbatas dan air sulit didapat, senyuman para sesepuh di desa ini nggak pernah luntur.\n\nMomen ini benar-benar menampar kita yang sering mengeluh di zona nyaman. Share video ini buat menyebarkan energi positif hari ini! ✨`,
-              hashtags: ['#BahagiaSederhana', '#SenyumDesa', '#OrangBaik', '#InspirasiHidup', '#fyp'],
-            },
-          },
-          {
-            rank: 5,
-            viralScore: 84,
-            title: 'Pesan Moral: Refleksi Menghargai Air Bersih',
-            hookHeadline: 'JANGAN PERNAH BUANG AIR LAGI SETELAH INI! 🙏',
-            reasonWhyViral: 'Call to action moral yang memicu penonton klik share dan simpan.',
-            startSec: 380,
-            endSec: 380 + dur,
-            durationSec: dur,
-            subtitles: [
-              {
-                id: 1,
-                start: 0,
-                end: dur,
-                text: 'HARGAI SETIAP TETES AIR YANG KITA MILIKI HARI INI!',
-                words: [
-                  { word: 'HARGAI', start: 0, end: 0.5 },
-                  { word: 'SETIAP', start: 0.6, end: 1.1 },
-                  { word: 'TETES', start: 1.2, end: 1.7, emoji: '💧' },
-                  { word: 'AIR', start: 1.8, end: 2.2 },
-                  { word: 'KITA', start: 2.3, end: 2.7 },
-                  { word: 'HARI', start: 2.8, end: 3.2 },
-                  { word: 'INI!', start: 3.3, end: 3.8, emoji: '🙏' },
-                ],
-              },
-            ],
-            copywriting: {
-              hookHeadline: 'Jangan Pernah Buang-buang Air Lagi Setelah Ini! 🙏',
-              caption: `Saat kita sering membiarkan air kran terbuang sia-sia, ingatlah ada ribuan saudara kita yang harus menempuh berkilo-kilo meter jalan terjal demi satu ember air.\n\nSemoga video ini jadi pengingat buat kita semua. Yuk, mulai hemat air dari rumah kita masing-masing! 💧`,
-              hashtags: ['#HematAir', '#PeduliLingkungan', '#RefleksiDiri', '#BersyukurSelalu', '#fyp'],
-            },
-          },
-        ]
-      : [1, 2, 3, 4, 5].map((idx) => {
-          const s = (idx - 1) * dur + 10;
-          return {
-            rank: idx,
-            viralScore: 100 - (idx - 1) * 4,
-            title: `Klip #${idx}: Sorotan Momen Utama`,
-            hookHeadline: `Momen Bagian ${idx}: Hal Paling Mengagetkan di Video Ini! 😱`,
-            reasonWhyViral: idx === 1 ? 'Opening Hook dengan retensi visual terbaik.' : `Eskalasi momen seru di menit ke-${Math.floor(s / 60)}.`,
-            startSec: s,
-            endSec: s + dur,
-            durationSec: dur,
-            subtitles: [
-              {
-                id: 1,
-                start: 0,
-                end: dur,
-                text: `TONTON SAMPAI SELESAI MOMEN BAGIAN ${idx} INI!`,
-                words: [
-                  { word: 'TONTON', start: 0, end: 0.5 },
-                  { word: 'SAMPAI', start: 0.6, end: 1.0 },
-                  { word: 'SELESAI', start: 1.1, end: 1.6, emoji: '⚡' },
-                  { word: 'MOMEN', start: 1.7, end: 2.2 },
-                  { word: `BAGIAN ${idx}!`, start: 2.3, end: 3.0, emoji: '🔥' },
-                ],
-              },
-            ],
-            copywriting: {
-              hookHeadline: `Momen Bagian ${idx}: Hal Paling Mengagetkan! 😱`,
-              caption: `${title}\n\nMomen di bagian ke-${idx} ini beneran paling seru dan nggak terduga! Tonton sampai habis dan tulis pendapat kamu di bawah ya 👇`,
-              hashtags: ['#fyp', '#viral', '#trending', '#foryou', '#reels', '#shorts'],
-            },
-          };
-        });
+            id: 1,
+            start: 0,
+            end: clipDur,
+            text: p.subPhrases.join(' '),
+            words: words
+          }
+        ],
+        copywriting: {
+          hookHeadline: p.hook,
+          caption: p.caption,
+          hashtags: p.hashtags
+        }
+      });
+    }
 
     setClips(generated);
   };
 
-  // Handle Videotto "Otto" Prompt Execution
-  const handleSendOttoPrompt = () => {
-    if (!ottoPrompt.trim()) return;
-    const userText = ottoPrompt.trim();
-    setOttoMessages((prev) => [...prev, { sender: 'user', text: userText }]);
-    setOttoPrompt('');
-
-    setTimeout(() => {
-      let reply = `Siap! Perintah "${userText}" telah diterapkan ke klip saat ini.`;
-      const lower = userText.toLowerCase();
-
-      if (lower.includes('kuning') || lower.includes('yellow')) {
-        setHighlightColor('#FFD700');
-        reply = 'Warna highlight kata aktif diubah menjadi Kuning Hormozi!';
-      } else if (lower.includes('merah') || lower.includes('red')) {
-        setHighlightColor('#FF3B30');
-        reply = 'Warna highlight diubah menjadi Merah Viral!';
-      } else if (lower.includes('cyan') || lower.includes('biru')) {
-        setHighlightColor('#00FFFF');
-        reply = 'Warna highlight diubah menjadi Cyan Glow!';
-      } else if (lower.includes('font') || lower.includes('huruf')) {
-        setFontFamily('Impact');
-        reply = 'Font subtitle diubah menjadi Impact Bold!';
-      } else if (lower.includes('hook') || lower.includes('judul')) {
-        setHookBannerText('🔥 TONTON SEBELUM DIHAPUS!');
-        reply = 'Hook Banner disetel lebih provokatif: "🔥 TONTON SEBELUM DIHAPUS!"';
-      }
-
-      setOttoMessages((prev) => [...prev, { sender: 'otto', text: reply }]);
-    }, 600);
-  };
-
-  // Subtitle words for dynamic karaoke
+  // Subtitle kata aktif untuk dynamic karaoke
   const currentWords = activeClip?.subtitles?.[0]?.words || [];
-  const activeWordIdx = Math.floor((currentPlaySec % 5) * (currentWords.length / 5));
+  const activeWordIdx = Math.floor((currentPlaySec % 8) * (currentWords.length / 8));
+
+  // Chunk kata menjadi baris pendek 3-4 kata agar enak dibaca (Easy to Read)
+  const currentSentenceChunk = currentWords.slice(
+    Math.max(0, activeWordIdx - 2),
+    Math.min(currentWords.length, activeWordIdx + 4)
+  );
 
   const formatMinSec = (sec: number) => {
     const m = Math.floor(sec / 60);
@@ -407,12 +319,36 @@ export default function Dashboard() {
     return `${m}:${s.toString().padStart(2, '0')}`;
   };
 
+  // Otto AI handler
+  const handleSendOttoPrompt = () => {
+    if (!ottoPrompt.trim()) return;
+    const txt = ottoPrompt.trim();
+    setOttoMessages((prev) => [...prev, { sender: 'user', text: txt }]);
+    setOttoPrompt('');
+
+    setTimeout(() => {
+      let reply = `Siap! Perintah "${txt}" sudah diterapkan pada klip terpilih.`;
+      const l = txt.toLowerCase();
+      if (l.includes('kuning') || l.includes('yellow')) {
+        setHighlightColor('#FFD700');
+        reply = 'Warna kata aktif diubah menjadi Kuning Hormozi!';
+      } else if (l.includes('font') || l.includes('huruf')) {
+        setFontFamily('Impact');
+        reply = 'Font diubah menjadi Impact Bold!';
+      } else if (l.includes('kotak') || l.includes('box')) {
+        setCaptionBoxStyle('card');
+        reply = 'Box subtitle diubah menjadi Card Hitam Kontras!';
+      }
+      setOttoMessages((prev) => [...prev, { sender: 'otto', text: reply }]);
+    }, 600);
+  };
+
   return (
-    <div className="min-h-screen bg-[#0d0e12] text-neutral-100 flex flex-col font-sans selection:bg-indigo-600 selection:text-white">
-      {/* Top Navbar (Videotto & CapCut Studio Header) */}
-      <header className="h-14 border-b border-neutral-800/80 bg-[#121318]/90 backdrop-blur-md px-5 flex items-center justify-between sticky top-0 z-40">
+    <div className="min-h-screen bg-[#0a0b0e] text-neutral-100 flex flex-col font-sans selection:bg-indigo-600 selection:text-white">
+      {/* 1. TOP NAVBAR (Videotto & CapCut Studio Header) */}
+      <header className="h-14 border-b border-neutral-800/80 bg-[#101116]/95 backdrop-blur-md px-5 flex items-center justify-between sticky top-0 z-40">
         <div className="flex items-center gap-3">
-          <div className="w-8 h-8 rounded-lg bg-gradient-to-tr from-indigo-500 via-purple-500 to-pink-500 flex items-center justify-center shadow-lg shadow-indigo-500/20">
+          <div className="w-8 h-8 rounded-xl bg-gradient-to-tr from-indigo-500 via-purple-500 to-pink-500 flex items-center justify-center shadow-lg shadow-indigo-500/20">
             <Wand2 className="w-4 h-4 text-white" />
           </div>
           <div className="flex items-center gap-2">
@@ -420,42 +356,40 @@ export default function Dashboard() {
               ViralClipper
             </span>
             <span className="text-[10px] font-black uppercase px-2 py-0.5 rounded-full bg-gradient-to-r from-indigo-500/20 to-purple-500/20 text-indigo-400 border border-indigo-500/30">
-              Studio AI Pro
+              Studio Clip Master
             </span>
           </div>
         </div>
 
-        {/* Workflow breadcrumbs */}
+        {/* Workflow Breadcrumbs */}
         <div className="hidden md:flex items-center gap-2 text-xs text-neutral-400">
           <span className="text-white font-medium flex items-center gap-1.5">
             <span className="w-4 h-4 rounded-full bg-indigo-600 text-white flex items-center justify-center text-[10px] font-bold">1</span>
-            Import URL
+            Import Video (5 Min)
           </span>
           <ChevronRight className="w-3.5 h-3.5 text-neutral-600" />
           <span className="text-white font-medium flex items-center gap-1.5">
             <span className="w-4 h-4 rounded-full bg-indigo-600 text-white flex items-center justify-center text-[10px] font-bold">2</span>
-            CapCut Auto-Cut (5 Clips)
+            Auto-Cut ({clips.length} Klip Terurut)
           </span>
           <ChevronRight className="w-3.5 h-3.5 text-neutral-600" />
           <span className="text-indigo-400 font-bold flex items-center gap-1.5">
             <span className="w-4 h-4 rounded-full bg-indigo-500/20 border border-indigo-500 text-indigo-400 flex items-center justify-center text-[10px] font-bold">3</span>
-            Videotto Studio & Export
+            Studio Preview & Subtitle
           </span>
         </div>
 
-        <div className="flex items-center gap-2">
-          <button
-            onClick={() => setIsSettingsOpen(true)}
-            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-neutral-800 bg-neutral-900 hover:bg-neutral-800 text-xs font-semibold text-neutral-300 transition-all"
-          >
-            <Settings className="w-3.5 h-3.5 text-indigo-400" />
-            AI Engine ({settings.provider})
-          </button>
-        </div>
+        <button
+          onClick={() => setIsSettingsOpen(true)}
+          className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-neutral-800 bg-neutral-900 hover:bg-neutral-800 text-xs font-semibold text-neutral-300 transition-all"
+        >
+          <Settings className="w-3.5 h-3.5 text-indigo-400" />
+          Settings ({settings.provider})
+        </button>
       </header>
 
-      {/* Top URL & Parameter Bar (Videotto / CapCut Long-to-Shorts Header Input) */}
-      <div className="bg-[#15171e] border-b border-neutral-800/80 px-5 py-3">
+      {/* 2. TOP ACTION CONTROL BAR */}
+      <div className="bg-[#12141a] border-b border-neutral-800/80 px-5 py-3">
         <div className="max-w-7xl mx-auto flex flex-col md:flex-row items-center gap-3">
           <div className="relative flex-1 w-full">
             <Link2 className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-neutral-500" />
@@ -463,14 +397,15 @@ export default function Dashboard() {
               type="text"
               value={url}
               onChange={(e) => setUrl(e.target.value)}
-              placeholder="Tempel link YouTube (contoh: https://youtu.be/EodfcT2s9Xo)..."
-              className="w-full pl-10 pr-4 py-2 rounded-xl bg-[#0f1015] border border-neutral-800 focus:border-indigo-500 focus:outline-none text-xs text-white placeholder-neutral-500"
+              placeholder="Tempel link video YouTube (contoh: https://youtu.be/EodfcT2s9Xo)..."
+              className="w-full pl-10 pr-4 py-2 rounded-xl bg-[#0a0b0e] border border-neutral-800 focus:border-indigo-500 focus:outline-none text-xs text-white placeholder-neutral-500"
             />
           </div>
 
           <div className="flex items-center gap-2 w-full md:w-auto">
-            {/* Target Duration Dropdown/Pills */}
-            <div className="flex items-center bg-[#0f1015] p-1 rounded-xl border border-neutral-800 text-xs">
+            {/* Durasi Pilihan Klip */}
+            <div className="flex items-center bg-[#0a0b0e] p-1 rounded-xl border border-neutral-800 text-xs">
+              <span className="text-[11px] text-neutral-400 px-2 font-medium">Durasi Klip:</span>
               {([30, 60, 90] as const).map((d) => (
                 <button
                   key={d}
@@ -486,8 +421,8 @@ export default function Dashboard() {
               ))}
             </div>
 
-            {/* AI Focus Filter */}
-            <div className="flex items-center bg-[#0f1015] p-1 rounded-xl border border-neutral-800 text-xs">
+            {/* AI Highlight Focus */}
+            <div className="flex items-center bg-[#0a0b0e] p-1 rounded-xl border border-neutral-800 text-xs">
               {[
                 { key: 'emotional', label: 'Emosional' },
                 { key: 'engagement', label: 'High Energy' },
@@ -507,7 +442,7 @@ export default function Dashboard() {
               ))}
             </div>
 
-            {/* Generate Button */}
+            {/* Tombol Generate Auto-Cut */}
             <button
               onClick={handleAnalyze}
               disabled={isLoading}
@@ -518,7 +453,7 @@ export default function Dashboard() {
               }`}
             >
               <Wand2 className="w-3.5 h-3.5" />
-              {isLoading ? 'Memindai Footage...' : 'AI Auto-Cut 5 Klip'}
+              {isLoading ? 'Memindai Video...' : `AI Auto-Cut ${clips.length || 5} Klip`}
             </button>
           </div>
         </div>
@@ -540,20 +475,19 @@ export default function Dashboard() {
         )}
       </div>
 
-      {/* Main Studio 3-Column Layout (CapCut & Videotto Workspace) */}
-      <div className="flex-1 max-w-7xl w-full mx-auto p-4 grid grid-cols-1 lg:grid-cols-12 gap-4">
+      {/* 3. STUDIO WORKSPACE (3-COLUMN STUDIO LAYOUT) */}
+      <div className="max-w-7xl w-full mx-auto p-4 grid grid-cols-1 lg:grid-cols-12 gap-4">
         
-        {/* COLUMN 1: CapCut Multi-Clip Gallery (Left Sidebar - 3 Cols) */}
-        <div className="lg:col-span-3 flex flex-col gap-2.5 bg-[#13151b] border border-neutral-800/80 rounded-2xl p-3 h-[680px]">
+        {/* KOLOM 1: CapCut Smart Clips Gallery (3 Kolom) */}
+        <div className="lg:col-span-3 flex flex-col gap-2 bg-[#12141a] border border-neutral-800/80 rounded-2xl p-3 h-[620px]">
           <div className="flex items-center justify-between pb-2 border-b border-neutral-800/80">
             <span className="text-xs font-bold text-white flex items-center gap-1.5">
               <Film className="w-3.5 h-3.5 text-indigo-400" />
               Smart Clips ({clips.length})
             </span>
-            <span className="text-[10px] text-neutral-400">Peringkat 1 - 5</span>
+            <span className="text-[10px] text-neutral-400">Rank #1 Paling Menarik</span>
           </div>
 
-          {/* List of Clips */}
           <div className="flex-1 overflow-y-auto space-y-2 pr-1 custom-scrollbar">
             {clips.map((clip, idx) => {
               const isSelected = selectedClipIdx === idx;
@@ -564,20 +498,19 @@ export default function Dashboard() {
                     setSelectedClipIdx(idx);
                     setIsPlaying(false);
                   }}
-                  className={`relative p-2.5 rounded-xl border text-left cursor-pointer transition-all ${
+                  className={`p-2.5 rounded-xl border text-left cursor-pointer transition-all ${
                     isSelected
                       ? 'border-indigo-500 bg-indigo-500/10 shadow-md ring-1 ring-indigo-500/50'
-                      : 'border-neutral-800/80 bg-[#161820] hover:border-neutral-700 hover:bg-[#1a1c25]'
+                      : 'border-neutral-800/80 bg-[#161822] hover:border-neutral-700 hover:bg-[#1a1c28]'
                   }`}
                 >
-                  {/* Rank & Viral Score */}
-                  <div className="flex items-center justify-between mb-1.5">
+                  <div className="flex items-center justify-between mb-1">
                     <span
                       className={`text-[10px] font-black px-1.5 py-0.5 rounded ${
                         idx === 0
-                          ? 'bg-amber-500 text-black'
+                          ? 'bg-amber-400 text-black'
                           : idx === 1
-                          ? 'bg-neutral-300 text-black'
+                          ? 'bg-neutral-200 text-black'
                           : 'bg-neutral-800 text-neutral-300'
                       }`}
                     >
@@ -600,7 +533,7 @@ export default function Dashboard() {
 
                   <div className="flex items-center justify-between text-[10px] text-neutral-500 border-t border-neutral-800/80 pt-1.5">
                     <span className="font-mono">
-                      ⏱️ {formatMinSec(clip.startSec)} - {formatMinSec(clip.endSec)}
+                      ⏱️ {formatMinSec(clip.startSec)} - {formatMinSec(clip.endSec)} ({clip.durationSec}s)
                     </span>
                     <span className={isSelected ? 'text-indigo-400 font-bold' : 'text-neutral-500'}>
                       {isSelected ? '● Dipilih' : 'Pilih'}
@@ -611,39 +544,37 @@ export default function Dashboard() {
             })}
           </div>
 
-          {/* Batch Export Button */}
           <button
             onClick={() => {
-              alert(`Batch export ${clips.length} klip 9:16 portrait siap! Semua klip telah dipotong dan diformat.`);
+              alert(`Semua ${clips.length} klip siap diekspor serentak!`);
             }}
-            className="w-full py-2.5 px-3 rounded-xl bg-neutral-800 hover:bg-neutral-700 text-white font-bold text-xs flex items-center justify-center gap-1.5 border border-neutral-700 transition-all"
+            className="w-full py-2 px-3 rounded-xl bg-neutral-800 hover:bg-neutral-700 text-white font-bold text-xs flex items-center justify-center gap-1.5 border border-neutral-700 transition-all"
           >
-            <Download className="w-3.5 h-3.5" /> Export All 5 Clips
+            <Download className="w-3.5 h-3.5" /> Export All {clips.length} Clips
           </button>
         </div>
 
-        {/* COLUMN 2: Central CapCut 9:16 Canvas & Player (5 Cols) */}
-        <div className="lg:col-span-5 flex flex-col items-center justify-between bg-[#13151b] border border-neutral-800/80 rounded-2xl p-4 h-[680px]">
-          {/* Top Canvas Bar */}
+        {/* KOLOM 2: CapCut 9:16 Canvas & Player Studio (5 Kolom) */}
+        <div className="lg:col-span-5 flex flex-col items-center justify-between bg-[#12141a] border border-neutral-800/80 rounded-2xl p-4 h-[620px]">
           <div className="w-full flex items-center justify-between pb-2 border-b border-neutral-800/80 text-xs">
             <span className="font-bold text-white flex items-center gap-1.5">
               <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
               9:16 Auto-Reframe Preview
             </span>
             <span className="text-[11px] font-mono text-neutral-400">
-              {formatMinSec(currentPlaySec)} / {formatMinSec(activeClip?.durationSec || 30)}
+              {formatMinSec(currentPlaySec)} / {formatMinSec(activeClip?.durationSec || 60)}
             </span>
           </div>
 
-          {/* 9:16 Vertical Portrait Frame */}
-          <div className="relative w-[280px] h-[497px] rounded-2xl overflow-hidden border-2 border-neutral-800 shadow-2xl bg-black flex items-center justify-center select-none my-auto">
-            {/* Layer 1: Blurred Background */}
+          {/* Canvas 9:16 Portrait */}
+          <div className="relative w-[270px] h-[460px] rounded-2xl overflow-hidden border-2 border-neutral-800 shadow-2xl bg-black flex items-center justify-center select-none my-auto">
+            {/* Layer 1: Background Blur */}
             <div
               className="absolute inset-0 bg-cover bg-center filter blur-xl opacity-60 scale-125"
               style={{ backgroundImage: `url(${thumbnailUrl})` }}
             />
 
-            {/* Layer 2: Real YouTube Player Foreground Trimmed */}
+            {/* Layer 2: Real YouTube Player Foreground */}
             <div className="relative z-10 w-full aspect-video shadow-2xl overflow-hidden flex items-center justify-center bg-black/90 border-y border-white/10">
               {youtubeId && activeClip ? (
                 isPlaying ? (
@@ -678,43 +609,45 @@ export default function Dashboard() {
             </div>
 
             {/* Layer 3: Hook Banner Overlay (0 - 3s) */}
-            <div className="absolute top-8 left-3 right-3 z-20 pointer-events-none">
-              <div className="bg-red-600 text-white font-black text-[11px] uppercase tracking-wider px-2.5 py-1.5 rounded-lg text-center shadow-lg border border-red-400/40">
-                🚨 {hookBannerText || activeClip?.hookHeadline || 'BAYANGKAN, MAU MANDI SEPERJUANGAN INI!'}
+            <div className="absolute top-6 left-3 right-3 z-20 pointer-events-none">
+              <div className="bg-red-600/95 text-white font-black text-[11px] uppercase tracking-wider px-3 py-1.5 rounded-lg text-center shadow-xl border border-red-400/40">
+                🚨 {hookBannerText || activeClip?.hookHeadline}
               </div>
             </div>
 
-            {/* Layer 4: Live Dynamic Karaoke Subtitle */}
-            <div className="absolute bottom-12 left-3 right-3 z-20 pointer-events-none text-center">
+            {/* Layer 4: ENHANCED READABLE SUBTITLES (Micro-phrasing, Pill Box, High Contrast) */}
+            <div className="absolute bottom-10 left-3 right-3 z-20 pointer-events-none text-center">
               <div
-                className={`inline-block px-3 py-2 rounded-xl backdrop-blur-md transition-all ${
-                  captionPreset === 'box'
-                    ? 'bg-black/85 border border-white/10'
-                    : captionPreset === 'glow'
-                    ? 'bg-black/50 text-cyan-300 drop-shadow-[0_0_8px_rgba(6,182,212,0.8)]'
-                    : 'bg-black/70 border border-black/40'
+                className={`inline-block px-3.5 py-2 rounded-2xl backdrop-blur-md transition-all shadow-2xl ${
+                  captionBoxStyle === 'pill'
+                    ? 'bg-black/80 border border-white/15'
+                    : captionBoxStyle === 'card'
+                    ? 'bg-black/95 border border-white/20'
+                    : captionBoxStyle === 'glow'
+                    ? 'bg-black/60 border border-cyan-500/30 shadow-[0_0_15px_rgba(6,182,212,0.5)]'
+                    : 'bg-black/70'
                 }`}
                 style={{ fontFamily }}
               >
-                {currentWords.length > 0 ? (
+                {currentSentenceChunk.length > 0 ? (
                   <p
-                    className="font-black uppercase leading-tight drop-shadow-[0_2px_4px_rgba(0,0,0,1)]"
+                    className="font-extrabold uppercase leading-snug tracking-wide drop-shadow-[0_2px_4px_rgba(0,0,0,1)]"
                     style={{ fontSize: `${fontSize}px` }}
                   >
-                    {currentWords.map((item, idx) => {
-                      const isWordActive = idx === activeWordIdx;
+                    {currentSentenceChunk.map((item, idx) => {
+                      const isWordActive = idx === (activeWordIdx % currentSentenceChunk.length);
                       return (
                         <span
                           key={idx}
                           style={{
-                            color: isWordActive ? highlightColor : textColor,
-                            transform: isWordActive ? 'scale(1.18)' : 'scale(1.0)',
-                            textDecoration: isWordActive ? 'underline' : 'none',
+                            color: isWordActive ? highlightColor : '#FFFFFF',
+                            transform: isWordActive ? 'scale(1.12)' : 'scale(1.0)',
+                            textShadow: isWordActive ? `0 0 10px ${highlightColor}` : '0 2px 4px rgba(0,0,0,0.8)',
                           }}
                           className="inline-block mx-0.5 transition-all duration-150 font-black"
                         >
-                          {item.emoji ? `${item.emoji} ` : ''}
-                          {item.word}
+                          {item.word}{' '}
+                          {item.emoji && <span className="inline-block ml-0.5 text-sm">{item.emoji}</span>}
                         </span>
                       );
                     })}
@@ -732,21 +665,19 @@ export default function Dashboard() {
 
             {/* Layer 5: Watermark */}
             {watermark && (
-              <div className="absolute bottom-2.5 right-3 z-20 text-[9px] font-bold text-white/60 bg-black/40 px-1.5 py-0.5 rounded">
+              <div className="absolute bottom-2 right-3 z-20 text-[9px] font-bold text-white/70 bg-black/50 px-2 py-0.5 rounded backdrop-blur-sm">
                 @{watermark}
               </div>
             )}
           </div>
 
-          {/* Bottom Player Scrub / Transport Controls */}
+          {/* Transport Controls */}
           <div className="w-full flex items-center justify-between gap-2 pt-2 border-t border-neutral-800/80">
             <button
-              onClick={() => {
-                setIsPlaying(!isPlaying);
-              }}
+              onClick={() => setIsPlaying(!isPlaying)}
               className="px-4 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white font-bold text-xs flex items-center gap-1.5 transition-all shadow-md"
             >
-              <Play className="w-3.5 h-3.5 fill-current" />
+              {isPlaying ? <Pause className="w-3.5 h-3.5 fill-current" /> : <Play className="w-3.5 h-3.5 fill-current" />}
               {isPlaying ? 'Pause' : 'Putar Klip'}
             </button>
 
@@ -756,7 +687,7 @@ export default function Dashboard() {
                 setTimeout(() => setIsPlaying(true), 100);
               }}
               className="p-2 rounded-xl bg-neutral-800 hover:bg-neutral-700 text-neutral-300 text-xs transition-all"
-              title="Ulangi dari Detik 0"
+              title="Ulangi dari awal"
             >
               <RotateCcw className="w-3.5 h-3.5" />
             </button>
@@ -773,7 +704,7 @@ export default function Dashboard() {
 
             <button
               onClick={() => {
-                alert(`Rendering Klip #${activeClip?.rank} dengan resolusi 1080x1920 (9:16) dan subtitle ${fontFamily}.`);
+                alert(`Render klip #${activeClip?.rank} siap! Format 1080x1920 (9:16 Portrait) dengan subtitle ${fontFamily}.`);
               }}
               className="flex-1 py-2 px-3 rounded-xl bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 font-bold text-white text-xs flex items-center justify-center gap-1.5 shadow-md transition-all active:scale-[0.98]"
             >
@@ -782,12 +713,11 @@ export default function Dashboard() {
           </div>
         </div>
 
-        {/* COLUMN 3: Videotto Studio & "Otto" AI Editor (Right Sidebar - 4 Cols) */}
-        <div className="lg:col-span-4 flex flex-col bg-[#13151b] border border-neutral-800/80 rounded-2xl p-4 h-[680px]">
-          {/* Tabs: Style | Copywriting | Otto AI */}
-          <div className="flex bg-[#0f1015] p-1 rounded-xl border border-neutral-800 mb-3.5">
+        {/* KOLOM 3: Videotto Studio Controls & Otto AI (4 Kolom) */}
+        <div className="lg:col-span-4 flex flex-col bg-[#12141a] border border-neutral-800/80 rounded-2xl p-4 h-[620px]">
+          <div className="flex bg-[#0a0b0e] p-1 rounded-xl border border-neutral-800 mb-3.5">
             {[
-              { key: 'style', label: 'Subtitle Style', icon: Type },
+              { key: 'style', label: 'Subtitle Studio', icon: Type },
               { key: 'copywriting', label: 'Copywriting', icon: Share2 },
               { key: 'otto', label: 'Ask Otto AI', icon: Sparkles },
             ].map((t) => {
@@ -809,39 +739,37 @@ export default function Dashboard() {
             })}
           </div>
 
-          {/* TAB 1: SUBTITLE & STYLING STUDIO */}
+          {/* TAB 1: SUBTITLE STUDIO */}
           {activeTab === 'style' && (
-            <div className="flex-1 overflow-y-auto space-y-4 pr-1 text-xs custom-scrollbar">
-              {/* Preset Selector */}
+            <div className="flex-1 overflow-y-auto space-y-3.5 pr-1 text-xs custom-scrollbar">
               <div>
-                <label className="text-neutral-400 font-semibold mb-1.5 block">Preset Style Subtitle</label>
+                <label className="text-neutral-400 font-semibold mb-1.5 block">Bentuk Box Subtitle (Enak Dibaca)</label>
                 <div className="grid grid-cols-2 gap-2">
                   {[
-                    { id: 'hormozi', name: 'Alex Hormozi (Kuning)' },
-                    { id: 'glow', name: 'CapCut Neon Glow' },
-                    { id: 'box', name: 'Minimalist Black Box' },
-                    { id: 'clean', name: 'White Contrast' },
-                  ].map((p) => (
+                    { id: 'pill', name: 'Rounded Pill (Rekomendasi)' },
+                    { id: 'card', name: 'Solid Card Box' },
+                    { id: 'glow', name: 'Neon Glow Frame' },
+                    { id: 'minimal', name: 'Minimalist Clean' },
+                  ].map((b) => (
                     <button
-                      key={p.id}
-                      onClick={() => setCaptionPreset(p.id as any)}
+                      key={b.id}
+                      onClick={() => setCaptionBoxStyle(b.id as any)}
                       className={`p-2 rounded-xl border font-bold text-left transition-all ${
-                        captionPreset === p.id
+                        captionBoxStyle === b.id
                           ? 'border-indigo-500 bg-indigo-500/10 text-indigo-300'
-                          : 'border-neutral-800 bg-[#161820] text-neutral-400 hover:text-white'
+                          : 'border-neutral-800 bg-[#161822] text-neutral-400 hover:text-white'
                       }`}
                     >
-                      {p.name}
+                      {b.name}
                     </button>
                   ))}
                 </div>
               </div>
 
-              {/* Font Family Selector */}
               <div>
                 <label className="text-neutral-400 font-semibold mb-1.5 block flex items-center justify-between">
                   <span>Pilihan Font Subtitle</span>
-                  <span className="text-indigo-400 font-mono text-[11px]">{fontFamily}</span>
+                  <span className="text-indigo-400 font-mono">{fontFamily}</span>
                 </label>
                 <div className="grid grid-cols-3 gap-1.5">
                   {(['Montserrat', 'Impact', 'Inter', 'Arial Black', 'Comic Sans MS'] as SubtitleFont[]).map((f) => (
@@ -852,7 +780,7 @@ export default function Dashboard() {
                       className={`p-2 rounded-lg border text-xs font-bold transition-all truncate text-center ${
                         fontFamily === f
                           ? 'border-indigo-500 bg-indigo-500/20 text-indigo-300'
-                          : 'border-neutral-800 bg-[#161820] text-neutral-400 hover:text-white'
+                          : 'border-neutral-800 bg-[#161822] text-neutral-400 hover:text-white'
                       }`}
                     >
                       {f}
@@ -861,7 +789,6 @@ export default function Dashboard() {
                 </div>
               </div>
 
-              {/* Highlight Active Word Color */}
               <div>
                 <label className="text-neutral-400 font-semibold mb-1.5 block">Warna Kata Aktif (Karaoke Highlight)</label>
                 <div className="flex gap-2">
@@ -878,7 +805,7 @@ export default function Dashboard() {
                       className={`flex-1 flex flex-col items-center gap-1 p-1.5 rounded-lg border transition-all ${
                         highlightColor === c.color
                           ? 'border-white bg-neutral-800'
-                          : 'border-neutral-800 bg-[#161820]'
+                          : 'border-neutral-800 bg-[#161822]'
                       }`}
                     >
                       <span className="w-4 h-4 rounded-full" style={{ backgroundColor: c.color }} />
@@ -887,49 +814,47 @@ export default function Dashboard() {
                 </div>
               </div>
 
-              {/* Font Size Slider */}
               <div>
                 <div className="flex items-center justify-between text-neutral-400 font-semibold mb-1">
-                  <span>Ukuran Teks Subtitle</span>
+                  <span>Ukuran Huruf Subtitle</span>
                   <span className="text-white font-mono">{fontSize}px</span>
                 </div>
                 <input
                   type="range"
                   min="14"
-                  max="28"
+                  max="26"
                   value={fontSize}
                   onChange={(e) => setFontSize(parseInt(e.target.value))}
                   className="w-full accent-indigo-500 cursor-pointer"
                 />
               </div>
 
-              {/* Hook Banner & Watermark Customization */}
               <div className="pt-2 border-t border-neutral-800/80 space-y-2">
                 <div>
-                  <label className="text-neutral-400 font-semibold block mb-1">Custom Hook Banner (3 Detik Awal)</label>
+                  <label className="text-neutral-400 font-semibold block mb-1">Custom Hook Banner (3 Detik Pertama)</label>
                   <input
                     type="text"
                     value={hookBannerText}
                     onChange={(e) => setHookBannerText(e.target.value)}
                     placeholder={activeClip?.hookHeadline || 'Tonton Sampai Habis!'}
-                    className="w-full px-3 py-2 rounded-xl bg-[#0f1015] border border-neutral-800 text-xs text-white focus:border-indigo-500 focus:outline-none"
+                    className="w-full px-3 py-2 rounded-xl bg-[#0a0b0e] border border-neutral-800 text-xs text-white focus:border-indigo-500 focus:outline-none"
                   />
                 </div>
                 <div>
-                  <label className="text-neutral-400 font-semibold block mb-1">Watermark Username</label>
+                  <label className="text-neutral-400 font-semibold block mb-1">Watermark Akun</label>
                   <input
                     type="text"
                     value={watermark}
                     onChange={(e) => setWatermark(e.target.value)}
                     placeholder="Username tanpa @"
-                    className="w-full px-3 py-2 rounded-xl bg-[#0f1015] border border-neutral-800 text-xs text-white focus:border-indigo-500 focus:outline-none"
+                    className="w-full px-3 py-2 rounded-xl bg-[#0a0b0e] border border-neutral-800 text-xs text-white focus:border-indigo-500 focus:outline-none"
                   />
                 </div>
               </div>
             </div>
           )}
 
-          {/* TAB 2: SOCIAL COPYWRITING (TikTok/Reels Ready) */}
+          {/* TAB 2: COPYWRITING */}
           {activeTab === 'copywriting' && (
             <div className="flex-1 overflow-y-auto space-y-3.5 pr-1 text-xs custom-scrollbar">
               <div className="flex items-center justify-between pb-2 border-b border-neutral-800">
@@ -955,13 +880,13 @@ export default function Dashboard() {
 
               <div>
                 <span className="text-[10px] uppercase font-bold text-neutral-400 tracking-wider">Caption Siap Upload</span>
-                <p className="text-neutral-300 text-xs mt-0.5 whitespace-pre-line leading-relaxed bg-[#0f1015] p-2.5 rounded-xl border border-neutral-800">
+                <p className="text-neutral-300 text-xs mt-0.5 whitespace-pre-line leading-relaxed bg-[#0a0b0e] p-2.5 rounded-xl border border-neutral-800">
                   {activeClip?.copywriting.caption}
                 </p>
               </div>
 
               <div>
-                <span className="text-[10px] uppercase font-bold text-neutral-400 tracking-wider">Viral Hashtags</span>
+                <span className="text-[10px] uppercase font-bold text-neutral-400 tracking-wider">Hashtags Viral</span>
                 <div className="flex flex-wrap gap-1.5 mt-1.5">
                   {activeClip?.copywriting.hashtags.map((tag, i) => (
                     <span
@@ -976,7 +901,7 @@ export default function Dashboard() {
             </div>
           )}
 
-          {/* TAB 3: VIDEOTTO "OTTO" PROMPT EDITOR */}
+          {/* TAB 3: OTTO AI */}
           {activeTab === 'otto' && (
             <div className="flex-1 flex flex-col justify-between overflow-hidden text-xs">
               <div className="flex-1 overflow-y-auto space-y-2.5 pr-1 mb-2.5 custom-scrollbar">
@@ -986,13 +911,13 @@ export default function Dashboard() {
                     className={`p-2.5 rounded-xl ${
                       msg.sender === 'user'
                         ? 'bg-indigo-600/30 border border-indigo-500/40 text-white ml-4'
-                        : 'bg-[#161820] border border-neutral-800 text-neutral-300 mr-4'
+                        : 'bg-[#161822] border border-neutral-800 text-neutral-300 mr-4'
                     }`}
                   >
                     <div className="flex items-center gap-1.5 mb-1 font-bold text-[10px]">
                       {msg.sender === 'otto' ? (
                         <>
-                          <Sparkles className="w-3 h-3 text-amber-400" /> Otto AI Video Editor
+                          <Sparkles className="w-3 h-3 text-amber-400" /> Otto AI Assistant
                         </>
                       ) : (
                         <span>Anda</span>
@@ -1003,15 +928,14 @@ export default function Dashboard() {
                 ))}
               </div>
 
-              {/* Input command box like Videotto */}
               <div className="relative pt-2 border-t border-neutral-800">
                 <input
                   type="text"
                   value={ottoPrompt}
                   onChange={(e) => setOttoPrompt(e.target.value)}
                   onKeyDown={(e) => e.key === 'Enter' && handleSendOttoPrompt()}
-                  placeholder="Ketik instruksi ke Otto (contoh: Ubah font jadi Impact)..."
-                  className="w-full pl-3 pr-10 py-2.5 rounded-xl bg-[#0f1015] border border-neutral-800 text-xs text-white focus:border-indigo-500 focus:outline-none"
+                  placeholder="Ketik ke Otto (contoh: Ubah subtitle jadi warna kuning)..."
+                  className="w-full pl-3 pr-10 py-2.5 rounded-xl bg-[#0a0b0e] border border-neutral-800 text-xs text-white focus:border-indigo-500 focus:outline-none"
                 />
                 <button
                   onClick={handleSendOttoPrompt}
@@ -1022,6 +946,164 @@ export default function Dashboard() {
               </div>
             </div>
           )}
+        </div>
+      </div>
+
+      {/* 4. GALERI HASIL KLIP DI BAWAH (BARISAN VIDEO 9:16 BERURUTAN RANK 1 - 5 SEPERTI CAPCUT & VIDEOTTO) */}
+      <div className="max-w-7xl w-full mx-auto p-4 pt-2">
+        <div className="bg-[#12141a] border border-neutral-800/80 rounded-2xl p-5 shadow-2xl">
+          <div className="flex flex-col md:flex-row md:items-center justify-between pb-4 border-b border-neutral-800/80 mb-5 gap-2">
+            <div>
+              <h4 className="text-base font-bold text-white flex items-center gap-2">
+                <Film className="w-5 h-5 text-indigo-400" />
+                Daftar Video Hasil Klip 9:16 ({clips.length} Klip)
+              </h4>
+              <p className="text-xs text-neutral-400 mt-0.5">
+                Video 5 menit berhasil dipotong menjadi {clips.length} klip durasi {clipLength} detik, diurutkan dari momen paling viral & memikat penonton.
+              </p>
+            </div>
+
+            <div className="flex items-center gap-2">
+              <span className="text-xs bg-indigo-500/10 text-indigo-400 border border-indigo-500/20 px-3 py-1 rounded-full font-bold">
+                🔥 Urutan 1 - {clips.length} (Berdasarkan Viral Retention Score)
+              </span>
+            </div>
+          </div>
+
+          {/* Barisan Kartu Video 9:16 yang Berjejer Rapi */}
+          <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-4">
+            {clips.map((clip, idx) => {
+              const isSelected = selectedClipIdx === idx;
+              return (
+                <div
+                  key={idx}
+                  className={`group relative rounded-2xl border overflow-hidden bg-[#161822] flex flex-col justify-between transition-all duration-200 ${
+                    isSelected
+                      ? 'border-indigo-500 ring-2 ring-indigo-500/40 shadow-xl shadow-indigo-500/10'
+                      : 'border-neutral-800 hover:border-neutral-700 hover:bg-[#1a1c28]'
+                  }`}
+                >
+                  {/* Top Badge: Rank & Viral Score */}
+                  <div className="p-3 pb-2 flex items-center justify-between">
+                    <span
+                      className={`text-[10px] font-black px-2 py-0.5 rounded-md ${
+                        idx === 0
+                          ? 'bg-amber-400 text-black shadow-sm'
+                          : idx === 1
+                          ? 'bg-neutral-200 text-black'
+                          : 'bg-neutral-800 text-neutral-300'
+                      }`}
+                    >
+                      RANK #{clip.rank}
+                    </span>
+
+                    <span className="text-[10px] font-extrabold text-emerald-400 bg-emerald-500/10 px-2 py-0.5 rounded border border-emerald-500/20 flex items-center gap-1">
+                      <Flame className="w-3 h-3 fill-emerald-400" />
+                      {clip.viralScore}%
+                    </span>
+                  </div>
+
+                  {/* 9:16 Aspect Thumbnail Preview */}
+                  <div className="relative aspect-[9/16] mx-3 rounded-xl overflow-hidden bg-black/80 border border-neutral-800/80 group-hover:border-neutral-700 transition-colors">
+                    {/* Blurred Background */}
+                    <div
+                      className="absolute inset-0 bg-cover bg-center filter blur-md opacity-50 scale-125"
+                      style={{ backgroundImage: `url(${thumbnailUrl})` }}
+                    />
+
+                    {/* Foreground Thumbnail Center */}
+                    <img
+                      src={thumbnailUrl}
+                      alt={clip.title}
+                      className="absolute inset-0 w-full h-full object-cover opacity-80"
+                    />
+
+                    {/* Hook Banner Mini */}
+                    <div className="absolute top-2 left-2 right-2 z-10">
+                      <span className="block bg-red-600/90 text-white font-black text-[9px] uppercase tracking-wider px-1.5 py-0.5 rounded text-center truncate shadow">
+                        🚨 {clip.hookHeadline}
+                      </span>
+                    </div>
+
+                    {/* Subtitle Preview Mini */}
+                    <div className="absolute bottom-3 left-2 right-2 z-10 text-center">
+                      <div className="bg-black/80 backdrop-blur-sm px-2 py-1 rounded-lg border border-white/10">
+                        <span className="text-[10px] font-black text-yellow-300 uppercase line-clamp-1">
+                          {clip.subtitles[0]?.text || clip.hookHeadline}
+                        </span>
+                      </div>
+                    </div>
+
+                    {/* Play Hover Overlay Button */}
+                    <div
+                      onClick={() => {
+                        setSelectedClipIdx(idx);
+                        setIsPlaying(true);
+                        window.scrollTo({ top: 120, behavior: 'smooth' });
+                      }}
+                      className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 flex items-center justify-center transition-opacity cursor-pointer z-20"
+                    >
+                      <div className="w-12 h-12 rounded-full bg-indigo-600 text-white flex items-center justify-center shadow-2xl hover:scale-110 transition-transform">
+                        <Play className="w-6 h-6 fill-white ml-0.5" />
+                      </div>
+                    </div>
+
+                    {/* Duration badge */}
+                    <div className="absolute bottom-10 right-2 z-10 bg-black/70 px-1.5 py-0.5 rounded text-[9px] font-mono text-white">
+                      {clip.durationSec}s
+                    </div>
+                  </div>
+
+                  {/* Clip Info & Actions */}
+                  <div className="p-3 pt-2.5 flex flex-col justify-between flex-1">
+                    <div>
+                      <h5 className="font-bold text-xs text-white line-clamp-1 mb-1">
+                        {clip.title}
+                      </h5>
+                      <p className="text-[10px] text-neutral-400 line-clamp-2 leading-relaxed mb-2.5">
+                        {clip.reasonWhyViral}
+                      </p>
+                    </div>
+
+                    <div className="space-y-1.5 pt-2 border-t border-neutral-800/80">
+                      <div className="flex items-center justify-between text-[10px] text-neutral-400 font-mono">
+                        <span>Segmen:</span>
+                        <span>{formatMinSec(clip.startSec)} - {formatMinSec(clip.endSec)}</span>
+                      </div>
+
+                      <div className="grid grid-cols-2 gap-1.5 pt-1">
+                        <button
+                          onClick={() => {
+                            setSelectedClipIdx(idx);
+                            setIsPlaying(true);
+                            window.scrollTo({ top: 120, behavior: 'smooth' });
+                          }}
+                          className={`py-1.5 px-2 rounded-lg text-[10px] font-bold flex items-center justify-center gap-1 transition-all ${
+                            isSelected
+                              ? 'bg-indigo-600 text-white shadow-sm'
+                              : 'bg-neutral-800 hover:bg-neutral-700 text-neutral-200'
+                          }`}
+                        >
+                          <Play className="w-2.5 h-2.5 fill-current" />
+                          {isSelected ? 'Diputar' : 'Preview'}
+                        </button>
+
+                        <button
+                          onClick={() => {
+                            alert(`Mengekspor Klip #${clip.rank} (${clip.durationSec}s)...`);
+                          }}
+                          className="py-1.5 px-2 rounded-lg bg-neutral-800 hover:bg-neutral-700 text-neutral-300 text-[10px] font-bold flex items-center justify-center gap-1 transition-all"
+                        >
+                          <Download className="w-2.5 h-2.5" />
+                          Export
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
         </div>
       </div>
 
