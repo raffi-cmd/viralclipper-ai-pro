@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import {
   Wand2,
   Settings,
@@ -22,14 +22,14 @@ import {
   Layers,
   AlertCircle,
   Sliders,
-  Heart,
-  Zap,
-  HelpCircle
+  Image as ImageIcon,
+  CheckCircle2
 } from 'lucide-react';
 import { Sidebar, ActiveNav } from '@/components/Sidebar';
 import { StudioPlayer } from '@/components/StudioPlayer';
 import { ClipGallery } from '@/components/ClipGallery';
 import { ExportModal } from '@/components/ExportModal';
+import { ThumbnailEditorModal } from '@/components/ThumbnailEditorModal';
 import { MyProjectsView } from '@/components/MyProjectsView';
 import { TemplatesView } from '@/components/TemplatesView';
 import { SettingsModal } from '@/components/SettingsModal';
@@ -50,6 +50,7 @@ import { IntelligentHighlightDetector } from '@/lib/highlight-engine/highlight-d
 import { ClientVideoRenderer } from '@/lib/rendering-engine/client-renderer';
 import { SubtitleFileExporter } from '@/lib/subtitle-generator';
 import { ProcessingJobManager } from '@/lib/job-manager';
+import { ThumbnailEngine } from '@/lib/thumbnail-generator/thumbnail-engine';
 
 export default function Dashboard() {
   // Navigation State
@@ -65,6 +66,9 @@ export default function Dashboard() {
   const [clipLength, setClipLength] = useState<30 | 60 | 90>(60);
   const [maxClips, setMaxClips] = useState<number>(5);
   const [editingStyle, setEditingStyle] = useState<EditingStyle>('emotional');
+
+  // Hidden video ref for frame extraction
+  const hiddenVideoRef = useRef<HTMLVideoElement>(null);
 
   // Job & Processing State
   const [jobManager] = useState(() => new ProcessingJobManager());
@@ -85,14 +89,13 @@ export default function Dashboard() {
   });
 
   // Project & Media State
-  const [projectName, setProjectName] = useState<string>(
-    'Baru Mandi..Keringatan..Mandi Lagi... Warga Sangat Kesulitan Air Bersih'
-  );
+  const [projectName, setProjectName] = useState<string>('Proyek Video Viral');
   const [sourceEmbedUrl, setSourceEmbedUrl] = useState<string | undefined>(
     'https://www.youtube.com/embed/EodfcT2s9Xo'
   );
+  const [youtubeId, setYoutubeId] = useState<string | null>('EodfcT2s9Xo');
   const [thumbnailUrl, setThumbnailUrl] = useState<string>(
-    'https://i.ytimg.com/vi/EodfcT2s9Xo/hqdefault.jpg'
+    'https://images.unsplash.com/photo-1503376780353-7e6692767b70?auto=format&fit=crop&w=800&q=80'
   );
   const [totalVideoDurationSec, setTotalVideoDurationSec] = useState<number>(300);
   const [sourceNotice, setSourceNotice] = useState<string | null>(null);
@@ -118,18 +121,20 @@ export default function Dashboard() {
     uppercase: true,
   });
 
-  // Branding Configuration
+  // Branding Configuration (Dynamically updated per clip)
   const [brandingConfig, setBrandingConfig] = useState<BrandingConfig>({
     showHookBanner: true,
-    hookBannerText: 'BAYANGKAN, MAU MANDI SEPERJUANGAN INI! 😭',
+    hookBannerText: '',
     showWatermark: true,
     watermarkText: 'ViralClipper',
     watermarkPosition: 'bottom-right',
   });
 
-  // Export Modal
+  // Export Modal & Thumbnail Editor Modal
   const [isExportOpen, setIsExportOpen] = useState(false);
   const [clipsToExport, setClipsToExport] = useState<ViralClip[]>([]);
+  const [isThumbnailEditorOpen, setIsThumbnailEditorOpen] = useState(false);
+  const [clipToEditThumbnail, setClipToEditThumbnail] = useState<ViralClip | null>(null);
   const [copiedCaption, setCopiedCaption] = useState(false);
   const [toastMessage, setToastMessage] = useState<string | null>(null);
 
@@ -150,9 +155,9 @@ export default function Dashboard() {
     const projs = LocalStorageManager.getProjects();
     setSavedProjects(projs);
 
-    // Initial highlight detection
+    // Initial highlight detection with proper topic-aware hooks
     IntelligentHighlightDetector.detectHighlights({
-      title: projectName,
+      title: 'Aksi Performa Mesin dan Sorotan Video',
       totalDurationSec: totalVideoDurationSec,
       targetClipDurationSec: clipLength,
       editingStyle,
@@ -161,6 +166,10 @@ export default function Dashboard() {
       setClips(initialClips);
       if (initialClips.length > 0) {
         setSelectedClipId(initialClips[0].id);
+        setBrandingConfig((prev) => ({
+          ...prev,
+          hookBannerText: initialClips[0].hookHeadline,
+        }));
       }
     });
   }, []);
@@ -177,6 +186,11 @@ export default function Dashboard() {
     if (validation.isValid) {
       setSourceCategory(validation.category);
       setSourceNotice(null);
+      if (validation.category === 'youtube' && validation.normalizedIdentifier) {
+        setYoutubeId(validation.normalizedIdentifier);
+      } else {
+        setYoutubeId(null);
+      }
     } else {
       setSourceNotice(validation.errorMessage || null);
     }
@@ -212,10 +226,11 @@ export default function Dashboard() {
       setLocalVideoFile(file);
       setLocalVideoUrl(mediaAccess.mediaStreamUrl || null);
       setSourceCategory('local');
+      setYoutubeId(null);
       setProjectName(metadata.title);
       setThumbnailUrl(metadata.thumbnailUrl);
       setTotalVideoDurationSec(metadata.durationSec);
-      setSourceNotice('Akses penuh media bytes lokal aktif. Pemrosesan dan perenderan dapat berjalan langsung.');
+      setSourceNotice('Akses penuh video lokal aktif. Video dapat langsung diputar dan dirender 100% di browser.');
 
       jobManager.completeJob(`Video lokal "${file.name}" siap diproses!`);
       showToast(`Berkas "${file.name}" (${metadata.durationSec}s) berhasil dimuat!`);
@@ -248,17 +263,17 @@ export default function Dashboard() {
 
       if (!access.canExtractDirectBytes && !settings.backendServerUrl) {
         setSourceNotice(
-          'Perhatian: Platform hosting web membatasi akses streaming binary URL online langsung (CORS/DRM). Untuk perenderan klip fisik MP4 otomatis tanpa server, silakan unggah video lokal secara langsung.'
+          'Catatan: Hosting web statis membatasi streaming raw binary URL online (CORS). Untuk perenderan klip MP4 instan tanpa server, silakan gunakan Upload Video Lokal.'
         );
       } else {
         setSourceNotice(null);
       }
 
       // 3. Highlight candidate detection across timeline
-      jobManager.updateStage('analyzing', 45, `Mendeteksi momen dengan hook tertinggi (Gaya: ${editingStyle.toUpperCase()})...`);
+      jobManager.updateStage('analyzing', 45, `Menganalisis konten video (Gaya: ${editingStyle.toUpperCase()})...`);
       await new Promise((r) => setTimeout(r, 600));
 
-      jobManager.updateStage('ranking', 75, `Menyusun peringkat kandidat klip durasi ${clipLength}s (Maksimal: ${maxClips})...`);
+      jobManager.updateStage('ranking', 75, `Menghitung skor viral & ranking klip (Target: ${clipLength}s)...`);
 
       const detectedClips = await IntelligentHighlightDetector.detectHighlights({
         title: metadata.title,
@@ -270,11 +285,26 @@ export default function Dashboard() {
         mediaFile: localVideoFile || undefined,
       });
 
-      // 4. Client-side video rendering pre-generation for active clip if media bytes are available
-      jobManager.updateStage('rendering', 90, 'Menyiapkan canvas & sinkronisasi subtitle karaoke...');
-      await new Promise((r) => setTimeout(r, 500));
+      // 4. Set thumbnails from real video frames if available
+      const topic = ThumbnailEngine.detectTopic(metadata.title);
+      for (const c of detectedClips) {
+        const frames = await ThumbnailEngine.extractClipFrames({
+          videoElement: hiddenVideoRef.current,
+          youtubeId,
+          startSec: c.startSec,
+          durationSec: c.durationSec,
+          fallbackImage: metadata.thumbnailUrl,
+          topic,
+        });
+        if (frames.length > 0) {
+          (c as any).customThumbnailUrl = frames[0].imageUrl;
+        }
+      }
 
-      jobManager.completeJob(`Berhasil menghasilkan ${detectedClips.length} klip highlight!`);
+      jobManager.updateStage('rendering', 90, 'Menyiapkan canvas & sinkronisasi subtitle karaoke...');
+      await new Promise((r) => setTimeout(r, 400));
+
+      jobManager.completeJob(`Selesai! Ditemukan ${detectedClips.length} klip highlight.`);
       setClips(detectedClips);
 
       if (detectedClips.length > 0) {
@@ -309,7 +339,7 @@ export default function Dashboard() {
       LocalStorageManager.saveProject(newProject);
       setSavedProjects(LocalStorageManager.getProjects());
 
-      showToast(`${detectedClips.length} klip highlight berhasil ditemukan & diberi peringkat!`);
+      showToast(`${detectedClips.length} klip highlight berhasil ditemukan dengan penilaian AI!`);
     } catch (err: any) {
       jobManager.failJob(err?.message || 'Terjadi kesalahan saat memproses video.');
     }
@@ -339,7 +369,7 @@ export default function Dashboard() {
     try {
       const renderResult = await ClientVideoRenderer.renderClip({
         localMediaUrl: localVideoUrl || undefined,
-        thumbnailUrl,
+        thumbnailUrl: (clip as any).customThumbnailUrl || thumbnailUrl,
         startSec: clip.startSec,
         durationSec: clip.durationSec,
         hookText: clip.hookHeadline,
@@ -348,7 +378,7 @@ export default function Dashboard() {
         brandingConfig,
       });
 
-      // Update clip with rendered video object URL so it plays in Studio Player!
+      // Update clip with rendered video object URL so it immediately plays in Studio Player!
       setClips((prev) =>
         prev.map((c) =>
           c.id === clip.id
@@ -370,10 +400,34 @@ export default function Dashboard() {
     }
   };
 
-  const isJobActive = currentJob.status !== 'idle' && currentJob.status !== 'completed' && currentJob.status !== 'failed' && currentJob.status !== 'cancelled';
+  // Apply customized thumbnail from ThumbnailEditorModal
+  const handleApplyCustomThumbnail = (clipId: string, newThumbnailUrl: string) => {
+    setClips((prev) =>
+      prev.map((c) => (c.id === clipId ? { ...c, customThumbnailUrl: newThumbnailUrl } : c))
+    );
+    showToast('Thumbnail klip berhasil diperbarui!');
+  };
+
+  const isJobActive =
+    currentJob.status !== 'idle' &&
+    currentJob.status !== 'completed' &&
+    currentJob.status !== 'failed' &&
+    currentJob.status !== 'cancelled';
 
   return (
     <div className="flex flex-col lg:flex-row min-h-screen lg:h-screen w-screen bg-[#090a0d] text-neutral-100 font-sans select-none overflow-x-hidden">
+      {/* Hidden video element for local video frame capture */}
+      {localVideoUrl && (
+        <video
+          ref={hiddenVideoRef}
+          src={localVideoUrl}
+          className="hidden"
+          preload="auto"
+          muted
+          playsInline
+        />
+      )}
+
       {/* 1. LEFT SIDEBAR */}
       <Sidebar
         activeNav={activeNav}
@@ -391,7 +445,7 @@ export default function Dashboard() {
               {projectName}
             </span>
             <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 shrink-0">
-              {clips.length} Klip Terpilih
+              {clips.length} Klip Siap
             </span>
           </div>
 
@@ -523,9 +577,9 @@ export default function Dashboard() {
                       onChange={(e) => setEditingStyle(e.target.value as EditingStyle)}
                       className="bg-transparent text-xs text-white focus:outline-none cursor-pointer pr-1"
                     >
-                      <option value="emotional" className="bg-[#12141a]">Emotional (Cerita & Haru)</option>
-                      <option value="high_energy" className="bg-[#12141a]">High Energy (Aksi & Cepat)</option>
-                      <option value="curiosity" className="bg-[#12141a]">Curiosity (Tanda Tanya & Rahasia)</option>
+                      <option value="emotional" className="bg-[#12141a]">Emotional (Haru & Cerita)</option>
+                      <option value="high_energy" className="bg-[#12141a]">High Energy (Aksi Cepat)</option>
+                      <option value="curiosity" className="bg-[#12141a]">Curiosity (Penuh Tanya)</option>
                     </select>
                   </div>
 
@@ -537,7 +591,7 @@ export default function Dashboard() {
                       onChange={(e) => setMaxClips(parseInt(e.target.value, 10))}
                       className="bg-transparent text-xs text-white focus:outline-none cursor-pointer pr-1"
                     >
-                      {[1, 2, 3, 4, 5, 6, 7, 8, 9, 10].map((n) => (
+                      {[3, 5, 8, 10].map((n) => (
                         <option key={n} value={n} className="bg-[#12141a]">
                           {n} Klip
                         </option>
@@ -563,8 +617,8 @@ export default function Dashboard() {
 
               {/* Source Notice / Capability Guidance */}
               {sourceNotice && (
-                <div className="p-2.5 rounded-xl bg-amber-500/10 border border-amber-500/20 text-amber-300 text-[11px] flex items-center gap-2">
-                  <AlertCircle className="w-4 h-4 shrink-0 text-amber-400" />
+                <div className="p-2.5 rounded-xl bg-indigo-500/10 border border-indigo-500/20 text-indigo-300 text-[11px] flex items-center gap-2">
+                  <AlertCircle className="w-4 h-4 shrink-0 text-indigo-400" />
                   <span>{sourceNotice}</span>
                 </div>
               )}
@@ -608,7 +662,7 @@ export default function Dashboard() {
                     <Film className="w-3.5 h-3.5 text-indigo-400" />
                     Kandidat Klip ({clips.length})
                   </span>
-                  <span className="text-[10px] text-neutral-400 font-mono">Ranked by Score</span>
+                  <span className="text-[10px] text-neutral-400 font-mono">Diferensiasi Skor</span>
                 </div>
 
                 <div className="flex-1 overflow-y-auto space-y-2 pr-1 custom-scrollbar">
@@ -687,7 +741,8 @@ export default function Dashboard() {
                   clip={activeClip}
                   sourceCategory={sourceCategory}
                   sourceEmbedUrl={sourceEmbedUrl}
-                  sourceThumbnailUrl={thumbnailUrl}
+                  sourceThumbnailUrl={(activeClip as any)?.customThumbnailUrl || thumbnailUrl}
+                  localVideoUrl={localVideoUrl}
                   styleConfig={styleConfig}
                   brandingConfig={brandingConfig}
                   onDownloadClip={handleDirectDownloadClip}
@@ -695,6 +750,12 @@ export default function Dashboard() {
                     if (activeClip) {
                       setClipsToExport([activeClip]);
                       setIsExportOpen(true);
+                    }
+                  }}
+                  onOpenThumbnailEditor={() => {
+                    if (activeClip) {
+                      setClipToEditThumbnail(activeClip);
+                      setIsThumbnailEditorOpen(true);
                     }
                   }}
                 />
@@ -935,10 +996,17 @@ export default function Dashboard() {
             <ClipGallery
               clips={clips}
               selectedClipId={selectedClipId}
-              thumbnailUrl={thumbnailUrl}
+              defaultThumbnailUrl={thumbnailUrl}
               sourceCategory={sourceCategory}
               onSelectClip={(id) => {
                 setSelectedClipId(id);
+                const target = clips.find((c) => c.id === id);
+                if (target) {
+                  setBrandingConfig((prev) => ({
+                    ...prev,
+                    hookBannerText: target.hookHeadline,
+                  }));
+                }
                 window.scrollTo({ top: 120, behavior: 'smooth' });
               }}
               onToggleClipSelection={(id) => {
@@ -951,6 +1019,10 @@ export default function Dashboard() {
                 setIsExportOpen(true);
               }}
               onDirectDownloadClip={handleDirectDownloadClip}
+              onOpenThumbnailEditorForClip={(clip) => {
+                setClipToEditThumbnail(clip);
+                setIsThumbnailEditorOpen(true);
+              }}
             />
           </div>
         )}
@@ -965,6 +1037,16 @@ export default function Dashboard() {
         brandingConfig={brandingConfig}
         thumbnailUrl={thumbnailUrl}
         localMediaUrl={localVideoUrl || undefined}
+      />
+
+      {/* Thumbnail Editor Modal */}
+      <ThumbnailEditorModal
+        isOpen={isThumbnailEditorOpen}
+        onClose={() => setIsThumbnailEditorOpen(false)}
+        clip={clipToEditThumbnail}
+        videoElement={hiddenVideoRef.current}
+        youtubeId={youtubeId}
+        onApplyThumbnail={handleApplyCustomThumbnail}
       />
 
       {/* Settings Modal */}

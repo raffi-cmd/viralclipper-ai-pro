@@ -110,6 +110,7 @@ export interface ViralClip {
   };
   renderedVideoUrl?: string;  // Object URL to actual rendered media file
   renderedVideoBlob?: Blob;   // Raw binary media blob
+  customThumbnailUrl?: string; // Custom or frame-extracted thumbnail URL
   isSelected?: boolean;
 }
 

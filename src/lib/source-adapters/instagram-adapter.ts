@@ -1,5 +1,6 @@
 import { SourceAdapter, SourceValidationResult, MediaAccessResult } from './types';
 import { SourceMetadata } from '../types';
+import { ThumbnailEngine } from '../thumbnail-generator/thumbnail-engine';
 
 export class InstagramAdapter implements SourceAdapter {
   category = 'instagram' as const;
@@ -32,12 +33,15 @@ export class InstagramAdapter implements SourceAdapter {
     const url = typeof input === 'string' ? input.trim() : '';
     const match = url.match(/instagram\.com\/(reel|p)\/([a-zA-Z0-9_-]+)/);
     const shortcode = match ? match[2] : 'reel';
+    const title = `Instagram Reel (${shortcode})`;
+    const topic = ThumbnailEngine.detectTopic(title);
+    const thumb = ThumbnailEngine.getTopicFallbackImage(topic);
 
     return {
       category: 'instagram',
-      title: `Instagram Reel (${shortcode})`,
+      title,
       author: 'Instagram Creator',
-      thumbnailUrl: 'https://images.unsplash.com/photo-1611262588024-d12430b98920?auto=format&fit=crop&w=800&q=80',
+      thumbnailUrl: thumb,
       durationSec: 90,
       canExtractDirectBytes: false,
       accessNotice:

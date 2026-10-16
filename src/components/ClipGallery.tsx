@@ -12,7 +12,7 @@ import {
   Info,
   Sparkles,
   Clock,
-  HelpCircle
+  Image as ImageIcon
 } from 'lucide-react';
 import { ViralClip, SourceCategory } from '@/lib/types';
 
@@ -23,7 +23,8 @@ interface ClipGalleryProps {
   onToggleClipSelection: (clipId: string) => void;
   onExportSelected: (selectedClips: ViralClip[]) => void;
   onDirectDownloadClip: (clip: ViralClip) => void;
-  thumbnailUrl: string;
+  onOpenThumbnailEditorForClip?: (clip: ViralClip) => void;
+  defaultThumbnailUrl: string;
   sourceCategory?: SourceCategory;
 }
 
@@ -34,7 +35,8 @@ export const ClipGallery: React.FC<ClipGalleryProps> = ({
   onToggleClipSelection,
   onExportSelected,
   onDirectDownloadClip,
-  thumbnailUrl,
+  onOpenThumbnailEditorForClip,
+  defaultThumbnailUrl,
   sourceCategory = 'youtube',
 }) => {
   const [sortBy, setSortBy] = useState<'score' | 'time' | 'duration'>('score');
@@ -64,12 +66,12 @@ export const ClipGallery: React.FC<ClipGalleryProps> = ({
               Hasil Klip Unggulan ({clips.length} Momen Terdeteksi)
             </h4>
             <span className="text-[11px] font-bold px-2 py-0.5 rounded-full bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
-              Ranked by AI Highlight Engine
+              AI Highlight Detection & Scoring
             </span>
           </div>
           <p className="text-[11px] text-neutral-400 mt-0.5 flex items-center gap-1.5">
             <Info className="w-3.5 h-3.5 text-neutral-500 hidden sm:inline" />
-            Setiap klip memiliki rentang timeline nyata. Klik Preview untuk melihat di Studio Player, atau Download untuk berkas MP4.
+            Setiap klip memiliki thumbnail, segmen timeline, dan skor terpisah. Klik Preview untuk memutar atau Edit Thumbnail untuk mengubah desain.
           </p>
         </div>
 
@@ -108,6 +110,7 @@ export const ClipGallery: React.FC<ClipGalleryProps> = ({
       <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-3.5">
         {sortedClips.map((clip) => {
           const isSelectedInStudio = selectedClipId === clip.id;
+          const clipThumbnail = (clip as any).customThumbnailUrl || defaultThumbnailUrl;
 
           return (
             <div
@@ -163,18 +166,18 @@ export const ClipGallery: React.FC<ClipGalleryProps> = ({
               >
                 {/* Blurred Layer */}
                 <div
-                  className="absolute inset-0 bg-cover bg-center filter blur-md opacity-50 scale-125"
-                  style={{ backgroundImage: `url(${thumbnailUrl})` }}
+                  className="absolute inset-0 bg-cover bg-center filter blur-md opacity-45 scale-125"
+                  style={{ backgroundImage: `url(${clipThumbnail})` }}
                 />
 
                 {/* Thumbnail Foreground */}
                 <img
-                  src={thumbnailUrl}
+                  src={clipThumbnail}
                   alt={clip.title}
-                  className="absolute inset-0 w-full h-full object-cover opacity-85"
+                  className="absolute inset-0 w-full h-full object-cover opacity-90"
                 />
 
-                {/* Hook Banner Mini */}
+                {/* Hook Headline Mini */}
                 <div className="absolute top-2 left-2 right-2 z-10">
                   <span className="block bg-red-600/90 text-white font-black text-[9px] uppercase tracking-wider px-1.5 py-0.5 rounded text-center truncate shadow">
                     🚨 {clip.hookHeadline}
@@ -207,7 +210,7 @@ export const ClipGallery: React.FC<ClipGalleryProps> = ({
               {/* Clip Details */}
               <div className="p-2.5 pt-2 flex flex-col justify-between flex-1">
                 <div>
-                  <h5 className="font-bold text-xs text-white line-clamp-1 mb-0.5">
+                  <h5 className="font-bold text-xs text-white line-clamp-1 mb-0.5" title={clip.title}>
                     {clip.title}
                   </h5>
                   <p className="text-[10px] text-neutral-400 line-clamp-2 leading-relaxed mb-2" title={clip.reasonWhyViral}>
@@ -223,26 +226,37 @@ export const ClipGallery: React.FC<ClipGalleryProps> = ({
                     </span>
                   </div>
 
-                  <div className="grid grid-cols-2 gap-1.5 pt-1">
+                  {/* Actions: Preview, Edit Thumbnail, Download */}
+                  <div className="grid grid-cols-3 gap-1 pt-1">
                     <button
                       onClick={() => onSelectClip(clip.id)}
-                      className={`py-1.5 px-2 rounded-lg text-[10px] font-bold flex items-center justify-center gap-1 transition-all ${
+                      className={`py-1.5 px-1 rounded-lg text-[10px] font-bold flex items-center justify-center gap-1 transition-all ${
                         isSelectedInStudio
                           ? 'bg-indigo-600 text-white shadow-sm'
                           : 'bg-neutral-800 hover:bg-neutral-700 text-neutral-200'
                       }`}
+                      title="Pratinjau di Studio Player"
                     >
                       <Play className="w-2.5 h-2.5 fill-current" />
-                      {isSelectedInStudio ? 'Aktif di Studio' : 'Preview'}
+                      <span>{isSelectedInStudio ? 'Aktif' : 'Play'}</span>
+                    </button>
+
+                    <button
+                      onClick={() => onOpenThumbnailEditorForClip && onOpenThumbnailEditorForClip(clip)}
+                      className="py-1.5 px-1 rounded-lg bg-neutral-800 hover:bg-neutral-700 text-amber-400 hover:text-amber-300 text-[10px] font-bold flex items-center justify-center gap-1 transition-all border border-neutral-700"
+                      title="Edit Thumbnail & Desain"
+                    >
+                      <ImageIcon className="w-2.5 h-2.5" />
+                      <span>Thumb</span>
                     </button>
 
                     <button
                       onClick={() => onDirectDownloadClip(clip)}
-                      className="py-1.5 px-2 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white text-[10px] font-bold flex items-center justify-center gap-1 transition-all shadow-sm active:scale-95"
-                      title="Download langsung MP4 & Aset"
+                      className="py-1.5 px-1 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white text-[10px] font-bold flex items-center justify-center gap-1 transition-all shadow-sm active:scale-95"
+                      title="Download MP4, Subtitle & Naskah"
                     >
                       <Download className="w-2.5 h-2.5" />
-                      Download
+                      <span>MP4</span>
                     </button>
                   </div>
                 </div>

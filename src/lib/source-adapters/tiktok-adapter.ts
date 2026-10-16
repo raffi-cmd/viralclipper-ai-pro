@@ -1,5 +1,6 @@
 import { SourceAdapter, SourceValidationResult, MediaAccessResult } from './types';
 import { SourceMetadata } from '../types';
+import { ThumbnailEngine } from '../thumbnail-generator/thumbnail-engine';
 
 export class TikTokAdapter implements SourceAdapter {
   category = 'tiktok' as const;
@@ -32,7 +33,7 @@ export class TikTokAdapter implements SourceAdapter {
     const url = typeof input === 'string' ? input.trim() : '';
     let title = 'TikTok Viral Video';
     let author = 'TikTok Creator';
-    let thumb = 'https://images.unsplash.com/photo-1611162617213-7d7a39e9b1d7?auto=format&fit=crop&w=800&q=80';
+    let thumb = '';
     let durationSec = 180; // 3 menit estimasi default TikTok
 
     try {
@@ -56,6 +57,11 @@ export class TikTokAdapter implements SourceAdapter {
       const urlParts = url.split('/');
       const slug = urlParts[urlParts.length - 1] || 'video';
       title = `TikTok Clip (${slug.slice(0, 20)})`;
+    }
+
+    if (!thumb) {
+      const topic = ThumbnailEngine.detectTopic(title);
+      thumb = ThumbnailEngine.getTopicFallbackImage(topic);
     }
 
     return {

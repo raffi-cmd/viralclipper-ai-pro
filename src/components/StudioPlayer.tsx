@@ -12,7 +12,8 @@ import {
   Film,
   Sparkles,
   ExternalLink,
-  Layers
+  Layers,
+  Image as ImageIcon
 } from 'lucide-react';
 import { ViralClip, SubtitleStyleConfig, BrandingConfig, SourceCategory } from '@/lib/types';
 
@@ -21,10 +22,12 @@ interface StudioPlayerProps {
   sourceCategory: SourceCategory;
   sourceEmbedUrl?: string;
   sourceThumbnailUrl: string;
+  localVideoUrl?: string | null;
   styleConfig: SubtitleStyleConfig;
   brandingConfig: BrandingConfig;
   onDownloadClip: (clip: ViralClip) => void;
   onOpenExportModal: () => void;
+  onOpenThumbnailEditor?: () => void;
 }
 
 export const StudioPlayer: React.FC<StudioPlayerProps> = ({
@@ -32,10 +35,12 @@ export const StudioPlayer: React.FC<StudioPlayerProps> = ({
   sourceCategory,
   sourceEmbedUrl,
   sourceThumbnailUrl,
+  localVideoUrl,
   styleConfig,
   brandingConfig,
   onDownloadClip,
   onOpenExportModal,
+  onOpenThumbnailEditor,
 }) => {
   const videoRef = useRef<HTMLVideoElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
@@ -44,8 +49,12 @@ export const StudioPlayer: React.FC<StudioPlayerProps> = ({
   const [currentTime, setCurrentTime] = useState<number>(0);
   const [duration, setDuration] = useState<number>(clip?.durationSec || 60);
   const [isMuted, setIsMuted] = useState<boolean>(false);
-  const [volume, setVolume] = useState<number>(1);
   const [playerMode, setPlayerMode] = useState<'rendered_clip' | 'source_inspector'>('rendered_clip');
+
+  // Determine effective media source for playback
+  // 1. Pre-rendered clip video URL if available
+  // 2. Local video URL seeked to clip's startSec
+  const effectiveVideoSrc = clip?.renderedVideoUrl || (localVideoUrl ? localVideoUrl : undefined);
 
   // Sync duration with active clip
   useEffect(() => {
@@ -54,10 +63,14 @@ export const StudioPlayer: React.FC<StudioPlayerProps> = ({
       setCurrentTime(0);
       setIsPlaying(false);
       if (videoRef.current) {
-        videoRef.current.currentTime = 0;
+        if (!clip.renderedVideoUrl && localVideoUrl) {
+          videoRef.current.currentTime = clip.startSec;
+        } else {
+          videoRef.current.currentTime = 0;
+        }
       }
     }
-  }, [clip?.id, clip?.durationSec]);
+  }, [clip?.id, clip?.durationSec, clip?.renderedVideoUrl, localVideoUrl]);
 
   // Handle play/pause
   const togglePlay = () => {
@@ -70,6 +83,13 @@ export const StudioPlayer: React.FC<StudioPlayerProps> = ({
       videoRef.current.pause();
       setIsPlaying(false);
     } else {
+      // If using raw local source video without render, start from clip.startSec
+      if (!clip?.renderedVideoUrl && localVideoUrl && clip) {
+        if (videoRef.current.currentTime < clip.startSec || videoRef.current.currentTime >= clip.endSec) {
+          videoRef.current.currentTime = clip.startSec;
+        }
+      }
+
       videoRef.current.play().then(() => {
         setIsPlaying(true);
       }).catch((e) => {
@@ -80,20 +100,34 @@ export const StudioPlayer: React.FC<StudioPlayerProps> = ({
   };
 
   const handleTimeUpdate = () => {
-    if (videoRef.current) {
+    if (!videoRef.current || !clip) return;
+
+    if (clip.renderedVideoUrl) {
       setCurrentTime(videoRef.current.currentTime);
       if (videoRef.current.currentTime >= duration) {
         videoRef.current.pause();
         videoRef.current.currentTime = 0;
         setIsPlaying(false);
       }
+    } else if (localVideoUrl) {
+      const relTime = Math.max(0, videoRef.current.currentTime - clip.startSec);
+      setCurrentTime(relTime);
+      if (videoRef.current.currentTime >= clip.endSec) {
+        videoRef.current.pause();
+        videoRef.current.currentTime = clip.startSec;
+        setIsPlaying(false);
+      }
     }
   };
 
-  const handleSeek = (newSec: number) => {
-    setCurrentTime(newSec);
-    if (videoRef.current) {
-      videoRef.current.currentTime = newSec;
+  const handleSeek = (newRelativeSec: number) => {
+    setCurrentTime(newRelativeSec);
+    if (!videoRef.current || !clip) return;
+
+    if (clip.renderedVideoUrl) {
+      videoRef.current.currentTime = newRelativeSec;
+    } else if (localVideoUrl) {
+      videoRef.current.currentTime = clip.startSec + newRelativeSec;
     }
   };
 
@@ -161,7 +195,7 @@ export const StudioPlayer: React.FC<StudioPlayerProps> = ({
               }`}
             >
               <Film className="w-3 h-3 text-indigo-300" />
-              <span>Rendered Clip (9:16)</span>
+              <span>Klip 9:16 Portrait</span>
             </button>
             {sourceEmbedUrl && (
               <button
@@ -182,16 +216,16 @@ export const StudioPlayer: React.FC<StudioPlayerProps> = ({
         {clip && (
           <div className="flex items-center gap-2 font-mono text-[11px]">
             <span className="text-neutral-400 bg-neutral-900 px-2 py-0.5 rounded border border-neutral-800">
-              Source: {formatMinSec(clip.startSec)} - {formatMinSec(clip.endSec)}
+              {formatMinSec(clip.startSec)} - {formatMinSec(clip.endSec)}
             </span>
             <span className="text-emerald-400 font-bold bg-emerald-500/10 px-2 py-0.5 rounded border border-emerald-500/20">
-              Clip: {formatMinSec(currentTime)} / {formatMinSec(duration)}
+              {formatMinSec(currentTime)} / {formatMinSec(duration)}
             </span>
           </div>
         )}
       </div>
 
-      {/* Main 9:16 Portrait Canvas (Rendered Media Element - ZERO YouTube Ads!) */}
+      {/* Main 9:16 Portrait Canvas (Rendered Media Element - ZERO Ads, Playable!) */}
       <div className="relative w-full max-w-[270px] aspect-[9/16] rounded-2xl overflow-hidden border-2 border-neutral-800 shadow-2xl bg-black flex items-center justify-center select-none my-3 sm:my-auto">
         {playerMode === 'rendered_clip' ? (
           <>
@@ -201,12 +235,12 @@ export const StudioPlayer: React.FC<StudioPlayerProps> = ({
               style={{ backgroundImage: `url(${sourceThumbnailUrl})` }}
             />
 
-            {/* Native Video Element for the Rendered Clip */}
+            {/* Native Video Element for the Clip */}
             <div className="relative z-10 w-full aspect-video shadow-2xl overflow-hidden flex items-center justify-center bg-black/90 border-y border-white/10">
-              {clip?.renderedVideoUrl ? (
+              {effectiveVideoSrc ? (
                 <video
                   ref={videoRef}
-                  src={clip.renderedVideoUrl}
+                  src={effectiveVideoSrc}
                   className="w-full h-full object-contain pointer-events-auto cursor-pointer"
                   onTimeUpdate={handleTimeUpdate}
                   onEnded={() => setIsPlaying(false)}
@@ -232,11 +266,11 @@ export const StudioPlayer: React.FC<StudioPlayerProps> = ({
               )}
             </div>
 
-            {/* Hook Banner (Detik 0 - 3.5) */}
+            {/* Dynamic Hook Banner (Detik 0 - 3.5) - NOT Hardcoded! */}
             {brandingConfig.showHookBanner && (currentTime <= 3.5 || !isPlaying) && (
               <div className="absolute top-6 left-3 right-3 z-20 pointer-events-none">
                 <div className="bg-red-600/95 text-white font-black text-[10px] sm:text-[11px] uppercase tracking-wider px-3 py-1.5 rounded-lg text-center shadow-xl border border-red-400/40">
-                  🚨 {brandingConfig.hookBannerText || clip?.hookHeadline || 'TONTON SAMPAI SELESAI!'}
+                  🚨 {clip?.hookHeadline || 'TONTON SAMPAI SELESAI!'}
                 </div>
               </div>
             )}
@@ -377,6 +411,17 @@ export const StudioPlayer: React.FC<StudioPlayerProps> = ({
             >
               {isMuted ? <VolumeX className="w-3.5 h-3.5" /> : <Volume2 className="w-3.5 h-3.5" />}
             </button>
+
+            {onOpenThumbnailEditor && (
+              <button
+                onClick={onOpenThumbnailEditor}
+                className="p-2 rounded-xl bg-neutral-800 hover:bg-neutral-700 text-amber-400 hover:text-amber-300 text-xs transition-all flex items-center gap-1 border border-neutral-700"
+                title="Edit Thumbnail & Desain"
+              >
+                <ImageIcon className="w-3.5 h-3.5" />
+                <span className="hidden sm:inline font-bold text-[11px]">Thumbnail</span>
+              </button>
+            )}
           </div>
 
           <div className="flex items-center gap-2">
