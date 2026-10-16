@@ -1,22 +1,16 @@
 'use client';
 
-import React, { useRef } from 'react';
+import React, { useRef, useEffect } from 'react';
 import {
   Play,
   Pause,
   RotateCcw,
-  Volume2,
-  VolumeX,
-  ExternalLink,
-  Download,
-  Clock,
-  Sparkles,
-  Maximize2
+  Download
 } from 'lucide-react';
-import { SubtitleWord, SubtitleStyleConfig, BrandingConfig } from '@/lib/types';
+import { SubtitleWord, SubtitleStyleConfig, BrandingConfig, SourceType } from '@/lib/types';
 
 interface StudioPlayerProps {
-  sourceType: 'youtube' | 'local';
+  sourceType: SourceType;
   youtubeId?: string;
   localVideoUrl?: string;
   thumbnailUrl: string;
@@ -62,90 +56,126 @@ export const StudioPlayer: React.FC<StudioPlayerProps> = ({
     return `${m}:${s.toString().padStart(2, '0')}`;
   };
 
-  // Micro-phrasing: tampilkan 3-5 kata aktif agar mata penonton nyaman membaca
+  // Micro-phrasing: show 3-5 active words
   const visibleWords = subtitles.slice(
     Math.max(0, activeWordIdx - 2),
     Math.min(subtitles.length, activeWordIdx + 4)
   );
 
+  // Handle local video play/pause
+  useEffect(() => {
+    if (sourceType === 'local' && videoRef.current) {
+      if (isPlaying) {
+        videoRef.current.play().catch(() => {});
+      } else {
+        videoRef.current.pause();
+      }
+    }
+  }, [isPlaying, sourceType]);
+
+  useEffect(() => {
+    if (sourceType === 'local' && videoRef.current) {
+      videoRef.current.currentTime = startSec;
+    }
+  }, [startSec, sourceType]);
+
+  const renderVideo = () => {
+    if (sourceType === 'local' && localVideoUrl) {
+      return (
+        <video
+          ref={videoRef}
+          src={localVideoUrl}
+          className="w-full h-full object-contain pointer-events-none"
+          controls={false}
+          loop
+          playsInline
+        />
+      );
+    }
+
+    if (sourceType === 'youtube' && youtubeId) {
+      if (isPlaying) {
+        return (
+          <iframe
+            key={`yt-${youtubeId}-${startSec}-${endSec}`}
+            src={`https://www.youtube.com/embed/${youtubeId}?autoplay=1&start=${startSec}&end=${endSec}&rel=0&modestbranding=1&playsinline=1`}
+            title="Active Clip"
+            className="w-full h-full border-0 pointer-events-auto"
+            allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
+            allowFullScreen
+          />
+        );
+      }
+      return (
+        <div onClick={onTogglePlay} className="relative w-full h-full cursor-pointer flex items-center justify-center">
+          <img src={thumbnailUrl} alt="Thumbnail" className="w-full h-full object-cover" />
+          <div className="absolute inset-0 bg-black/40 flex items-center justify-center hover:bg-black/20 transition-colors">
+            <div className="w-12 h-12 rounded-full bg-indigo-600 text-white flex items-center justify-center shadow-xl hover:scale-105 transition-transform">
+              <Play className="w-6 h-6 fill-white ml-0.5" />
+            </div>
+          </div>
+        </div>
+      );
+    }
+
+    if (sourceType === 'tiktok') {
+      return (
+        <div onClick={onTogglePlay} className="relative w-full h-full cursor-pointer flex items-center justify-center">
+          <img src={thumbnailUrl} alt="TikTok" className="w-full h-full object-cover" />
+          <div className="absolute inset-0 bg-black/40 flex items-center justify-center hover:bg-black/20 transition-colors">
+            <div className="w-12 h-12 rounded-full bg-[#fe2c55] text-white flex items-center justify-center shadow-xl hover:scale-105 transition-transform">
+              <Play className="w-6 h-6 fill-white ml-0.5" />
+            </div>
+          </div>
+          <div className="absolute bottom-2 left-2 right-2 text-center">
+            <span className="text-[10px] bg-black/60 px-2 py-0.5 rounded text-white/80">TikTok Preview</span>
+          </div>
+        </div>
+      );
+    }
+
+    return <div className="text-xs text-neutral-500">Pilih video terlebih dahulu</div>;
+  };
+
   return (
-    <div className="flex flex-col items-center justify-between bg-[#12141a] border border-neutral-800/80 rounded-2xl p-4 h-[640px] w-full">
+    <div className="flex flex-col items-center justify-between bg-[#12141a] border border-neutral-800/80 rounded-2xl p-3 sm:p-4 h-auto sm:h-[640px] w-full">
       {/* Top Canvas Bar */}
       <div className="w-full flex items-center justify-between pb-2 border-b border-neutral-800/80 text-xs">
         <div className="flex items-center gap-2">
           <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
-          <span className="font-bold text-white text-[11px]">9:16 Portrait Canvas</span>
+          <span className="font-bold text-white text-[11px]">9:16 Portrait</span>
           <span className="text-[10px] text-neutral-400 font-mono bg-neutral-800 px-1.5 py-0.5 rounded">
             {formatMinSec(startSec)} - {formatMinSec(endSec)}
           </span>
         </div>
-
         <span className="text-[11px] font-mono text-neutral-300 font-bold">
           {formatMinSec(currentPlaySec)} / {formatMinSec(durationSec)}
         </span>
       </div>
 
-      {/* 9:16 Frame Studio */}
-      <div className="relative w-[270px] h-[460px] rounded-2xl overflow-hidden border-2 border-neutral-800 shadow-2xl bg-black flex items-center justify-center select-none my-auto">
-        {/* Layer 1: Background Blur */}
+      {/* 9:16 Frame */}
+      <div className="relative w-full max-w-[270px] aspect-[9/16] rounded-2xl overflow-hidden border-2 border-neutral-800 shadow-2xl bg-black flex items-center justify-center select-none my-3 sm:my-auto">
+        {/* Background Blur */}
         <div
           className="absolute inset-0 bg-cover bg-center filter blur-xl opacity-60 scale-125"
           style={{ backgroundImage: `url(${thumbnailUrl})` }}
         />
 
-        {/* Layer 2: Real Video Foreground */}
+        {/* Video Foreground */}
         <div className="relative z-10 w-full aspect-video shadow-2xl overflow-hidden flex items-center justify-center bg-black/90 border-y border-white/10">
-          {sourceType === 'local' && localVideoUrl ? (
-            <video
-              ref={videoRef}
-              src={localVideoUrl}
-              className="w-full h-full object-contain pointer-events-auto"
-              controls={false}
-              autoPlay={isPlaying}
-              loop
-            />
-          ) : youtubeId ? (
-            isPlaying ? (
-              <iframe
-                key={`${youtubeId}-${startSec}-${endSec}`}
-                src={`https://www.youtube.com/embed/${youtubeId}?autoplay=1&start=${startSec}&end=${endSec}&rel=0&modestbranding=1&playsinline=1`}
-                title="Active Clip"
-                className="w-full h-full border-0 pointer-events-auto"
-                allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
-                allowFullScreen
-              />
-            ) : (
-              <div
-                onClick={onTogglePlay}
-                className="relative w-full h-full cursor-pointer flex items-center justify-center"
-              >
-                <img
-                  src={thumbnailUrl}
-                  alt="Thumbnail"
-                  className="w-full h-full object-cover"
-                />
-                <div className="absolute inset-0 bg-black/40 flex items-center justify-center hover:bg-black/20 transition-colors">
-                  <div className="w-12 h-12 rounded-full bg-indigo-600 text-white flex items-center justify-center shadow-xl hover:scale-105 transition-transform">
-                    <Play className="w-6 h-6 fill-white ml-0.5" />
-                  </div>
-                </div>
-              </div>
-            )
-          ) : (
-            <div className="text-xs text-neutral-500">Pilih video terlebih dahulu</div>
-          )}
+          {renderVideo()}
         </div>
 
-        {/* Layer 3: Hook Banner Overlay (0 - 3s) */}
+        {/* Hook Banner */}
         {brandingConfig.showHookBanner && brandingConfig.hookBannerText && (
           <div className="absolute top-6 left-3 right-3 z-20 pointer-events-none">
-            <div className="bg-red-600/95 text-white font-black text-[11px] uppercase tracking-wider px-3 py-1.5 rounded-lg text-center shadow-xl border border-red-400/40">
+            <div className="bg-red-600/95 text-white font-black text-[10px] sm:text-[11px] uppercase tracking-wider px-3 py-1.5 rounded-lg text-center shadow-xl border border-red-400/40">
               🚨 {brandingConfig.hookBannerText}
             </div>
           </div>
         )}
 
-        {/* Layer 4: Micro-Phrased Readable Subtitle (Human Readable Pill Box) */}
+        {/* Subtitle */}
         <div
           className={`absolute left-3 right-3 z-20 pointer-events-none text-center transition-all ${
             styleConfig.position === 'top'
@@ -205,7 +235,7 @@ export const StudioPlayer: React.FC<StudioPlayerProps> = ({
           </div>
         </div>
 
-        {/* Layer 5: Watermark */}
+        {/* Watermark */}
         {brandingConfig.showWatermark && brandingConfig.watermarkText && (
           <div
             className={`absolute z-20 text-[9px] font-bold text-white/70 bg-black/50 px-2 py-0.5 rounded backdrop-blur-sm ${
@@ -223,9 +253,8 @@ export const StudioPlayer: React.FC<StudioPlayerProps> = ({
         )}
       </div>
 
-      {/* Transport Controls Bar */}
+      {/* Transport Controls */}
       <div className="w-full space-y-2 pt-2 border-t border-neutral-800/80">
-        {/* Interactive Seekbar Scrubber */}
         <div className="w-full flex items-center gap-2">
           <input
             type="range"
@@ -240,7 +269,7 @@ export const StudioPlayer: React.FC<StudioPlayerProps> = ({
         <div className="flex items-center justify-between gap-2">
           <button
             onClick={onTogglePlay}
-            className="px-4 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white font-bold text-xs flex items-center gap-1.5 transition-all shadow-md active:scale-95"
+            className="px-3 sm:px-4 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white font-bold text-xs flex items-center gap-1.5 transition-all shadow-md active:scale-95"
           >
             {isPlaying ? <Pause className="w-3.5 h-3.5 fill-current" /> : <Play className="w-3.5 h-3.5 fill-current" />}
             {isPlaying ? 'Pause' : 'Putar'}
@@ -254,23 +283,13 @@ export const StudioPlayer: React.FC<StudioPlayerProps> = ({
             <RotateCcw className="w-3.5 h-3.5" />
           </button>
 
-          {youtubeId && (
-            <a
-              href={`https://www.youtube.com/watch?v=${youtubeId}&t=${startSec}s`}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="p-2 rounded-xl bg-neutral-800 hover:bg-neutral-700 text-neutral-300 text-xs transition-all"
-              title="Buka di YouTube"
-            >
-              <ExternalLink className="w-3.5 h-3.5" />
-            </a>
-          )}
-
           <button
             onClick={onOpenExport}
             className="flex-1 py-2 px-3 rounded-xl bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 font-bold text-white text-xs flex items-center justify-center gap-1.5 shadow-md transition-all active:scale-[0.98]"
           >
-            <Download className="w-3.5 h-3.5" /> Export Klip Ini
+            <Download className="w-3.5 h-3.5" />
+            <span className="hidden sm:inline">Export Klip Ini</span>
+            <span className="sm:hidden">Export</span>
           </button>
         </div>
       </div>

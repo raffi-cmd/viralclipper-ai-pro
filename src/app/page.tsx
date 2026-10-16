@@ -14,15 +14,11 @@ import {
   Type,
   Flame,
   Film,
-  FolderKanban,
-  BookmarkCheck,
-  LayoutTemplate,
-  ChevronRight,
-  Info,
-  CheckCircle2,
   Download,
   Copy,
-  Check
+  Check,
+  Video,
+  Play
 } from 'lucide-react';
 import { Sidebar, ActiveNav } from '@/components/Sidebar';
 import { StudioPlayer } from '@/components/StudioPlayer';
@@ -37,14 +33,21 @@ import {
   SubtitleStyleConfig,
   BrandingConfig,
   AISettings,
-  SubtitleFont
+  SubtitleFont,
+  SourceType
 } from '@/lib/types';
 import { LocalStorageManager } from '@/lib/storage';
+import { ClientVideoExporter } from '@/lib/client-video-exporter';
+import { SubtitleFileExporter } from '@/lib/subtitle-generator';
 
 function extractYouTubeId(url: string): string | null {
   const regExp = /^.*(youtu.be\/|v\/|u\/\w\/|embed\/|watch\?v=|&v=)([^#&?]*).*/;
   const match = url.match(regExp);
   return match && match[2].length === 11 ? match[2] : null;
+}
+
+function isTikTokUrl(url: string): boolean {
+  return /tiktok\.com/i.test(url);
 }
 
 export default function Dashboard() {
@@ -53,7 +56,7 @@ export default function Dashboard() {
 
   // Input & Import State
   const [url, setUrl] = useState('https://youtu.be/EodfcT2s9Xo');
-  const [sourceType, setSourceType] = useState<'youtube' | 'local'>('youtube');
+  const [sourceType, setSourceType] = useState<SourceType>('youtube');
   const [localVideoUrl, setLocalVideoUrl] = useState<string | null>(null);
   const [clipLength, setClipLength] = useState<30 | 60 | 90>(60);
   const [highlightFocus, setHighlightFocus] = useState<'emotional' | 'engagement' | 'curiosity'>('emotional');
@@ -91,12 +94,12 @@ export default function Dashboard() {
   const [currentPlaySec, setCurrentPlaySec] = useState<number>(0);
   const [studioTab, setStudioTab] = useState<'subtitles' | 'copywriting' | 'branding'>('subtitles');
 
-  // Subtitle Styling Configuration (Highly Readable Micro-Phrasing)
+  // Subtitle Styling Configuration
   const [styleConfig, setStyleConfig] = useState<SubtitleStyleConfig>({
     fontFamily: 'Montserrat',
     fontSize: 18,
     textColor: '#FFFFFF',
-    highlightColor: '#39FF14', // Hijau Neon Karaoke
+    highlightColor: '#39FF14', // Neon Green Karaoke
     preset: 'hormozi',
     boxStyle: 'pill',
     position: 'bottom',
@@ -117,173 +120,129 @@ export default function Dashboard() {
   const [isExportOpen, setIsExportOpen] = useState(false);
   const [clipsToExport, setClipsToExport] = useState<ViralClip[]>([]);
   const [copiedCaption, setCopiedCaption] = useState(false);
+  const [toastMessage, setToastMessage] = useState<string | null>(null);
 
-  // Load Initial Settings & Projects
-  useEffect(() => {
-    const s = LocalStorageManager.getSettings();
-    setSettings(s);
-    const projs = LocalStorageManager.getProjects();
-    setSavedProjects(projs);
-
-    // Inisialisasi awal 5 klip
-    const initialClips = buildRankedClips(projectName, totalVideoDurationSec, clipLength);
-    setClips(initialClips);
-    if (initialClips.length > 0) {
-      setSelectedClipId(initialClips[0].id);
-    }
-  }, []);
-
-  const activeClip = clips.find((c) => c.id === selectedClipId) || clips[0] || null;
-
-  // Real-time Playback Timer & Subtitle Synchronization
-  useEffect(() => {
-    let timer: NodeJS.Timeout;
-    if (isPlaying && activeClip) {
-      timer = setInterval(() => {
-        setCurrentPlaySec((prev) => {
-          if (prev >= activeClip.durationSec) {
-            return 0; // loop
-          }
-          return prev + 1;
-        });
-      }, 1000);
-    } else {
-      setCurrentPlaySec(0);
-    }
-    return () => clearInterval(timer);
-  }, [isPlaying, activeClip]);
-
-  // Handle URL Paste from Clipboard
-  const handlePasteClipboard = async () => {
-    try {
-      const text = await navigator.clipboard.readText();
-      if (text) {
-        setUrl(text);
-        setSourceType('youtube');
-      }
-    } catch {
-      alert('Gunakan Ctrl+V untuk menempelkan URL YouTube.');
-    }
+  const showToast = (msg: string) => {
+    setToastMessage(msg);
+    setTimeout(() => setToastMessage(null), 3500);
   };
 
-  // Handle Local Video File Upload
-  const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (file) {
-      if (file.size > 200 * 1024 * 1024) {
-        return alert('Ukuran file maksimal 200MB untuk mode browser.');
-      }
-      const localUrl = URL.createObjectURL(file);
-      setLocalVideoUrl(localUrl);
-      setSourceType('local');
-      setProjectName(file.name.replace(/\.[^/.]+$/, ''));
-      setYoutubeId(null);
-      setThumbnailUrl('https://images.unsplash.com/photo-1536240478700-b869070f9279?auto=format&fit=crop&w=800&q=80');
-      alert(`File video lokal "${file.name}" berhasil dimuat ke studio!`);
-    }
-  };
-
-  // Algoritma Pembagian & Pemeringkatan Klip Viral (Rank 1 - 5)
-  function buildRankedClips(title: string, totalSec: number, clipDur: number): ViralClip[] {
-    const count = Math.max(3, Math.min(5, Math.floor(totalSec / clipDur)));
+  // Build sequential clips based on video duration & chosen clip length
+  function buildRankedClips(title: string, totalSec: number, clipDur: number, source: SourceType = 'youtube'): ViralClip[] {
+    const count = Math.max(1, Math.min(5, Math.floor(totalSec / clipDur) || 3));
     const isWaterTopic = /air|mandi|desa|warga|keringat|jauh/i.test(title);
 
-    const descriptions = isWaterTopic
-      ? [
-          {
-            rank: 1,
-            score: 99,
-            title: 'Momen Paling Emosional: Mandi Saja Harus Perjuangan',
-            hook: 'BAYANGKAN, MAU MANDI SEPERJUANGAN INI! 😭',
-            reason: 'Kontras emosional kuat penonton kota vs pelosok. Retensi 3 detik pertama tertinggi.',
-            phrases: [
-              'PERNAH NGGAK BAYANGIN...',
-              'MAU MANDI AJA HARUS JALAN SEJAUH INI?',
-              'BARU SELESAI MANDI, KERINGATAN LAGI!',
-              'KARENA HARUS MENDAKI JALAN TERJAL!'
-            ],
-            caption: `Kalian yang tinggal di kota mungkin tinggal putar kran, air langsung mengalir deras. Tapi buat saudara-saudara kita di sini, air bersih itu barang yang sangat mewah.\n\nBayangin deh, baru aja selesai mandi, mereka harus jalan kaki jauh banget sambil mikul beban berat cuma demi air. Sampai rumah? Keringatan lagi, mandi lagi... gitu terus setiap hari.\n\nYuk, kita belajar lebih bersyukur hari ini. Gimana perasaan kalian waktu ngeliat perjuangan mereka? Tulis di kolom komentar ya! 👇`,
-            hashtags: ['#PetualanganAlamDesaku', '#KrisisAirBersih', '#KisahInspiratif', '#PerjuanganHidup', '#PedesaanIndonesia', '#fyp', '#viral']
-          },
-          {
-            rank: 2,
-            score: 95,
-            title: 'Momen Klimaks: Beban Puluhan Kilo di Tanjakan Tebing',
-            hook: 'BEBAN PULUHAN KILO DIPIKUL SETIAP HARI! 💔',
-            reason: 'Visual dramatis aksi nyata warga menaiki bukit curam membawa jerigen air.',
-            phrases: [
-              'SETIAP HARI MIKUL JERIGEN BERAT...',
-              'MENDAKI TEBING BATU YANG CURAM!',
-              'DEMI KELUARGA DI RUMAH BISA MINUM!',
-              'TIDAK PERNAH ADA KATA MENYERAH!'
-            ],
-            caption: `Jangan pernah mengeluh cuma karena hal sepele saat melihat video ini.\n\nSetiap tetes air di rumah mereka didapat dari cucuran keringat dan langkah kaki yang lelah menembus jalan berbatu. Hormat setinggi-tingginya untuk ketabahan warga di pelosok negeri. 🇮🇩`,
-            hashtags: ['#KetabahanWarga', '#PejuangKeluarga', '#RealitaKehidupan', '#fyp', '#trending', '#viralindonesia']
-          },
-          {
-            rank: 3,
-            score: 91,
-            title: 'Curiosity Hook: Menembus Dasar Lembah Tersembunyi',
-            hook: 'INILAH SUMBER SATU-SATUNYA AIR MEREKA! 🏞️',
-            reason: 'Rasa penasaran penonton melihat lokasi sumber air yang tersembunyi jauh di bawah jurang.',
-            phrases: [
-              'HARUS TURUN KE DASAR JURANG...',
-              'BUAT KETEMU TITIK MATA AIR INI!',
-              'AIRNYA SANGAT JERNIH DAN SEGAR!',
-              'TAPI JALAN PULANGNYA LUAR BIASA MENANTANG!'
-            ],
-            caption: `Ternyata seperti ini wujud sumber air yang harus mereka tuju setiap pagi dan sore hari. Sangat jernih tapi aksesnya luar biasa menantang!\n\nKira-kira sanggup nggak kalian kalau harus ambil air setiap hari ke tempat seperti ini? Komentar di bawah ya!`,
-            hashtags: ['#MataAirAlami', '#EksplorDesa', '#AlamIndonesia', '#KisahPelosok', '#viral']
-          },
-          {
-            rank: 4,
-            score: 87,
-            title: 'Inspirasi: Senyuman Warga Sepuh yang Tetap Tabah',
-            hook: 'MESKIPUN HIDUP SULIT, MEREKA TETAP TERSENYUM! 😊',
-            reason: 'Menghadirkan kehangatan emosi, optimisme, dan inspirasi hidup.',
-            phrases: [
-              'SENYUMAN TULUS DARI WARGA DESA...',
-              'YANG BIKIN HATI KITA ADEM!',
-              'BAHAGIA ITU TERNYATA SEDERHANA!',
-              'BELAJAR BERSYUKUR DARI MEREKA!'
-            ],
-            caption: `Definisi bahagia itu sederhana. Walau fasilitas serba terbatas dan air sulit didapat, senyuman para sesepuh di desa ini nggak pernah luntur.\n\nMomen ini benar-benar menampar kita yang sering mengeluh di zona nyaman. Share video ini buat menyebarkan energi positif hari ini! ✨`,
-            hashtags: ['#BahagiaSederhana', '#SenyumDesa', '#OrangBaik', '#InspirasiHidup', '#fyp']
-          },
-          {
-            rank: 5,
-            score: 84,
-            title: 'Pesan Moral: Refleksi Menghargai Setiap Tetes Air',
-            hook: 'JANGAN PERNAH BUANG AIR LAGI SETELAH INI! 🙏',
-            reason: 'Call to action moral yang memicu penonton klik share dan simpan.',
-            phrases: [
-              'HARGAI SETIAP TETES AIR BERSIH!',
-              'YANG MENGALIR DI RUMAH KITA HARI INI!',
-              'JANGAN PERNAH DISIA-SIAKAN LAGI!',
-              'INGAT PERJUANGAN SAUDARA-SAUDARA KITA!'
-            ],
-            caption: `Saat kita sering membiarkan air kran terbuang sia-sia, ingatlah ada ribuan saudara kita yang harus menempuh berkilo-kilo meter jalan terjal demi satu ember air.\n\nSemoga video ini jadi pengingat buat kita semua. Yuk, mulai hemat air dari rumah kita masing-masing! 💧`,
-            hashtags: ['#HematAir', '#PeduliLingkungan', '#RefleksiDiri', '#BersyukurSelalu', '#fyp']
-          }
-        ]
-      : [1, 2, 3, 4, 5].map((i) => ({
-          rank: i,
-          score: 100 - (i - 1) * 4,
-          title: `Klip #${i}: Momen Puncak Sorotan`,
-          hook: `MOMEN BAGIAN ${i}: HAL PALING MENGANGETKAN! 😱`,
-          reason: i === 1 ? 'Opening Hook dengan retensi visual terbaik.' : `Eskalasi momen seru di menit ke-${i}.`,
-          phrases: [
-            `TONTON SAMPAI SELESAI MOMEN BAGIAN ${i}!`,
-            'JANGAN SAMPAI TERLEWATKAN!',
-            'LIHAT KEJADIAN TIDAK TERDUGA INI!'
-          ],
-          caption: `${title}\n\nMomen di bagian ke-${i} ini beneran paling seru dan nggak terduga! Tonton sampai habis dan tulis pendapat kamu di bawah ya 👇`,
-          hashtags: ['#fyp', '#viral', '#trending', '#foryou', '#reels', '#shorts']
-        }));
+    const waterData = [
+      {
+        rank: 1,
+        score: 99,
+        title: 'Bagian 1: Mandi Saja Harus Perjuangan Hidup',
+        hook: 'BAYANGKAN, MAU MANDI SEPERJUANGAN INI! 😭',
+        reason: 'Kontras emosional kuat penonton kota vs pelosok. Retensi 3 detik awal tertinggi.',
+        phrases: [
+          'PERNAH NGGAK BAYANGIN...',
+          'MAU MANDI AJA HARUS JALAN SEJAUH INI?',
+          'BARU SELESAI MANDI, KERINGATAN LAGI!',
+          'KARENA HARUS MENDAKI JALAN TERJAL!'
+        ],
+        caption: `Kalian yang tinggal di kota mungkin tinggal putar kran, air langsung mengalir deras. Tapi buat saudara-saudara kita di sini, air bersih itu barang yang sangat mewah.\n\nBayangin deh, baru aja selesai mandi, mereka harus jalan kaki jauh banget sambil mikul beban berat cuma demi air. Sampai rumah? Keringatan lagi, mandi lagi... gitu terus setiap hari.\n\nYuk, kita belajar lebih bersyukur hari ini. Gimana perasaan kalian waktu ngeliat perjuangan mereka? Tulis di kolom komentar ya! 👇`,
+        hashtags: ['#PetualanganAlamDesaku', '#KrisisAirBersih', '#KisahInspiratif', '#PerjuanganHidup', '#PedesaanIndonesia', '#fyp', '#viral']
+      },
+      {
+        rank: 2,
+        score: 95,
+        title: 'Bagian 2: Beban Puluhan Kilo di Tebing Curam',
+        hook: 'BEBAN PULUHAN KILO DIPIKUL SETIAP HARI! 💔',
+        reason: 'Visual dramatis aksi nyata warga menaiki bukit curam membawa jerigen air.',
+        phrases: [
+          'SETIAP HARI MIKUL JERIGEN BERAT...',
+          'MENDAKI TEBING BATU YANG CURAM!',
+          'DEMI KELUARGA DI RUMAH BISA MINUM!',
+          'TIDAK PERNAH ADA KATA MENYERAH!'
+        ],
+        caption: `Jangan pernah mengeluh cuma karena hal sepele saat melihat video ini.\n\nSetiap tetes air di rumah mereka didapat dari cucuran keringat dan langkah kaki yang lelah menembus jalan berbatu. Hormat setinggi-tingginya untuk ketabahan warga di pelosok negeri. 🇮🇩`,
+        hashtags: ['#KetabahanWarga', '#PejuangKeluarga', '#RealitaKehidupan', '#fyp', '#trending', '#viralindonesia']
+      },
+      {
+        rank: 3,
+        score: 91,
+        title: 'Bagian 3: Menembus Dasar Lembah Tersembunyi',
+        hook: 'INILAH SUMBER SATU-SATUNYA AIR MEREKA! 🏞️',
+        reason: 'Rasa penasaran penonton melihat lokasi sumber air yang tersembunyi jauh di bawah jurang.',
+        phrases: [
+          'HARUS TURUN KE DASAR JURANG...',
+          'BUAT KETEMU TITIK MATA AIR INI!',
+          'AIRNYA SANGAT JERNIH DAN SEGAR!',
+          'TAPI JALAN PULANGNYA LUAR BIASA MENANTANG!'
+        ],
+        caption: `Ternyata seperti ini wujud sumber air yang harus mereka tuju setiap pagi dan sore hari. Sangat jernih tapi aksesnya luar biasa menantang!\n\nKira-kira sanggup nggak kalian kalau harus ambil air setiap hari ke tempat seperti ini? Komentar di bawah ya!`,
+        hashtags: ['#MataAirAlami', '#EksplorDesa', '#AlamIndonesia', '#KisahPelosok', '#viral']
+      },
+      {
+        rank: 4,
+        score: 87,
+        title: 'Bagian 4: Senyuman Warga Sepuh yang Tetap Tabah',
+        hook: 'MESKIPUN HIDUP SULIT, MEREKA TETAP TERSENYUM! 😊',
+        reason: 'Menghadirkan kehangatan emosi, optimisme, dan inspirasi hidup.',
+        phrases: [
+          'SENYUMAN TULUS DARI WARGA DESA...',
+          'YANG BIKIN HATI KITA ADEM!',
+          'BAHAGIA ITU TERNYATA SEDERHANA!',
+          'BELAJAR BERSYUKUR DARI MEREKA!'
+        ],
+        caption: `Definisi bahagia itu sederhana. Walau fasilitas serba terbatas dan air sulit didapat, senyuman para sesepuh di desa ini nggak pernah luntur.\n\nMomen ini benar-benar menampar kita yang sering mengeluh di zona nyaman. Share video ini buat menyebarkan energi positif hari ini! ✨`,
+        hashtags: ['#BahagiaSederhana', '#SenyumDesa', '#OrangBaik', '#InspirasiHidup', '#fyp']
+      },
+      {
+        rank: 5,
+        score: 84,
+        title: 'Bagian 5: Refleksi Menghargai Setiap Tetes Air',
+        hook: 'JANGAN PERNAH BUANG AIR LAGI SETELAH INI! 🙏',
+        reason: 'Call to action moral yang memicu penonton klik share dan simpan.',
+        phrases: [
+          'HARGAI SETIAP TETES AIR BERSIH!',
+          'YANG MENGALIR DI RUMAH KITA HARI INI!',
+          'JANGAN PERNAH DISIA-SIAKAN LAGI!',
+          'INGAT PERJUANGAN SAUDARA-SAUDARA KITA!'
+        ],
+        caption: `Saat kita sering membiarkan air kran terbuang sia-sia, ingatlah ada ribuan saudara kita yang harus menempuh berkilo-kilo meter jalan terjal demi satu ember air.\n\nSemoga video ini jadi pengingat buat kita semua. Yuk, mulai hemat air dari rumah kita masing-masing! 💧`,
+        hashtags: ['#HematAir', '#PeduliLingkungan', '#RefleksiDiri', '#BersyukurSelalu', '#fyp']
+      }
+    ];
 
-    return descriptions.slice(0, count).map((item, idx) => {
-      const start = idx * clipDur + 10;
-      const end = start + clipDur;
+    const genericData = [1, 2, 3, 4, 5].map((i) => {
+      const startMin = Math.floor(((i - 1) * clipDur) / 60);
+      const startSecMod = ((i - 1) * clipDur) % 60;
+      const endMin = Math.floor((i * clipDur) / 60);
+      const endSecMod = (i * clipDur) % 60;
+      const timeStr = `${startMin}:${String(startSecMod).padStart(2, '0')} - ${endMin}:${String(endSecMod).padStart(2, '0')}`;
+
+      return {
+        rank: i,
+        score: Math.max(75, 100 - (i - 1) * 4),
+        title: `Klip #${i} (${timeStr}) - Sorotan Terbaik`,
+        hook: i === 1 ? 'MOMEN AWAL YANG LANGSUNG BIKIN KAGET! 😱' : `KEJADIAN DI MENIT KE-${i} INI DILUAR DUGAAN! 🔥`,
+        reason: i === 1 ? 'Puncak retensi awal dengan hook visual instan.' : `Eskalasi momen aksi seru pada rentang ${timeStr}.`,
+        phrases: [
+          `TONTON SAMPAI SELESAI MOMEN BAGIAN KE-${i}!`,
+          'JANGAN SAMPAI ADA YANG TERLEWATKAN!',
+          'LIHAT DETAIL KEJADIAN INI!',
+          'TULIS PENDAPAT KAMU DI KOLOM KOMENTAR!'
+        ],
+        caption: `${title}\n\nMomen di bagian ke-${i} (${timeStr}) ini beneran paling seru dan menarik ditonton!\n\nTonton sampai habis dan berikan reaksi kalian di bawah ya! 👇`,
+        hashtags: ['#fyp', '#viral', '#trending', '#foryou', '#reels', '#shorts']
+      };
+    });
+
+    const dataset = isWaterTopic ? waterData : genericData;
+
+    return dataset.slice(0, count).map((item, idx) => {
+      // EXACT SEQUENTIAL TIMELINE SLICING
+      // Clip 1: 0 to clipDur (e.g. 0 to 60s)
+      // Clip 2: clipDur to clipDur*2 (e.g. 60 to 120s)
+      // Clip 3: clipDur*2 to clipDur*3 (e.g. 120 to 180s)
+      const start = idx * clipDur;
+      const end = (idx + 1) * clipDur;
 
       const words = item.phrases.flatMap((phrase, pIdx) => {
         const pWords = phrase.split(' ');
@@ -291,7 +250,7 @@ export default function Dashboard() {
           word: w,
           start: pIdx * 3 + wIdx * 0.4,
           end: pIdx * 3 + (wIdx + 1) * 0.4,
-          emoji: wIdx === pWords.length - 1 ? (pIdx === 0 ? '💧' : pIdx === 1 ? '🔥' : '✨') : undefined,
+          emoji: wIdx === pWords.length - 1 ? (pIdx === 0 ? '🔥' : pIdx === 1 ? '✨' : undefined) : undefined,
         }));
       });
 
@@ -324,54 +283,158 @@ export default function Dashboard() {
     });
   }
 
-  // Handle Generate Auto-Cut
+  // Load Initial Settings & Projects
+  useEffect(() => {
+    const s = LocalStorageManager.getSettings();
+    setSettings(s);
+    const projs = LocalStorageManager.getProjects();
+    setSavedProjects(projs);
+
+    const initialClips = buildRankedClips(projectName, totalVideoDurationSec, clipLength, sourceType);
+    setClips(initialClips);
+    if (initialClips.length > 0) {
+      setSelectedClipId(initialClips[0].id);
+    }
+  }, []);
+
+  const activeClip = clips.find((c) => c.id === selectedClipId) || clips[0] || null;
+
+  // Real-time Playback Timer & Subtitle Synchronization
+  useEffect(() => {
+    let timer: NodeJS.Timeout;
+    if (isPlaying && activeClip) {
+      timer = setInterval(() => {
+        setCurrentPlaySec((prev) => {
+          if (prev >= activeClip.durationSec) {
+            return 0; // loop
+          }
+          return prev + 1;
+        });
+      }, 1000);
+    } else {
+      setCurrentPlaySec(0);
+    }
+    return () => clearInterval(timer);
+  }, [isPlaying, activeClip]);
+
+  // Handle URL Paste from Clipboard
+  const handlePasteClipboard = async () => {
+    try {
+      const text = await navigator.clipboard.readText();
+      if (text) {
+        setUrl(text);
+        if (isTikTokUrl(text)) {
+          setSourceType('tiktok');
+        } else if (extractYouTubeId(text)) {
+          setSourceType('youtube');
+        }
+      }
+    } catch {
+      alert('Gunakan Ctrl+V untuk menempelkan tautan.');
+    }
+  };
+
+  // Handle Local Video File Upload
+  const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (file) {
+      if (file.size > 250 * 1024 * 1024) {
+        return alert('Ukuran file maksimal 250MB untuk mode browser.');
+      }
+      const localUrl = URL.createObjectURL(file);
+      setLocalVideoUrl(localUrl);
+      setSourceType('local');
+      const cleanName = file.name.replace(/\.[^/.]+$/, '');
+      setProjectName(cleanName);
+      setYoutubeId(null);
+      setThumbnailUrl('https://images.unsplash.com/photo-1536240478700-b869070f9279?auto=format&fit=crop&w=800&q=80');
+      showToast(`File "${file.name}" berhasil dimuat ke studio!`);
+    }
+  };
+
+  // Handle Generate Auto-Cut (Supports YouTube, TikTok & Local)
   const handleGenerateClips = async () => {
-    if (sourceType === 'youtube' && !url.trim()) {
-      return alert('Silakan masukkan link video YouTube!');
+    const cleanUrl = url.trim();
+
+    if (sourceType !== 'local' && !cleanUrl) {
+      return alert('Silakan masukkan link video YouTube atau TikTok!');
     }
 
     setIsLoading(true);
-    setProgressPercent(20);
-    setProcessStep('Mengekstrak informasi video & memindai audio...');
+    setProgressPercent(15);
+    setProcessStep('Mendeteksi tautan & menganalisis metadata video...');
 
-    let ytId = youtubeId;
+    let ytId: string | null = null;
     let title = projectName;
     let thumb = thumbnailUrl;
+    let detectedSource: SourceType = sourceType;
 
-    if (sourceType === 'youtube') {
-      ytId = extractYouTubeId(url.trim());
+    if (isTikTokUrl(cleanUrl)) {
+      detectedSource = 'tiktok';
+      setSourceType('tiktok');
+      setYoutubeId(null);
+
+      // Attempt TikTok oEmbed metadata fetch
+      try {
+        const res = await fetch(`https://www.tiktok.com/oembed?url=${encodeURIComponent(cleanUrl)}`);
+        if (res.ok) {
+          const data = await res.json();
+          if (data.title) {
+            title = data.title;
+            setProjectName(title);
+          }
+          if (data.thumbnail_url) {
+            thumb = data.thumbnail_url;
+            setThumbnailUrl(thumb);
+          }
+        }
+      } catch (err) {
+        console.warn('TikTok oEmbed fallback:', err);
+        title = `TikTok Video - ${cleanUrl.split('/').pop()?.split('?')[0] || 'Viral Clip'}`;
+        setProjectName(title);
+      }
+    } else if (extractYouTubeId(cleanUrl)) {
+      detectedSource = 'youtube';
+      setSourceType('youtube');
+      ytId = extractYouTubeId(cleanUrl);
       setYoutubeId(ytId);
       if (ytId) {
         thumb = `https://i.ytimg.com/vi/${ytId}/hqdefault.jpg`;
         setThumbnailUrl(thumb);
       }
+
       try {
-        const res = await fetch(`https://noembed.com/embed?url=${encodeURIComponent(url.trim())}`);
+        const res = await fetch(`https://noembed.com/embed?url=${encodeURIComponent(cleanUrl)}`);
         const data = await res.json();
         if (data && data.title) {
           title = data.title;
           setProjectName(title);
-          if (data.thumbnail_url) setThumbnailUrl(data.thumbnail_url);
+          if (data.thumbnail_url) {
+            thumb = data.thumbnail_url;
+            setThumbnailUrl(thumb);
+          }
         }
       } catch (e) {
-        console.warn(e);
+        console.warn('YouTube noembed fallback:', e);
       }
     }
 
     await new Promise((r) => setTimeout(r, 600));
-    setProgressPercent(55);
-    setProcessStep(`Menghitung pembagian klip durasi ${clipLength} detik & viral score...`);
+    setProgressPercent(50);
+    setProcessStep(`Memotong klip berurutan durasi ${clipLength} detik & scoring hook...`);
 
     await new Promise((r) => setTimeout(r, 700));
     setProgressPercent(85);
-    setProcessStep('Menghasilkan subtitle micro-phrasing & auto-reframe 9:16...');
+    setProcessStep('Menghasilkan subtitle micro-phrasing & optimasi retensi 9:16...');
 
-    const newClips = buildRankedClips(title, totalVideoDurationSec, clipLength);
+    // Generate sequential clips: 0-60, 60-120, etc.
+    const newClips = buildRankedClips(title, totalVideoDurationSec, clipLength, detectedSource);
 
     await new Promise((r) => setTimeout(r, 500));
     setProgressPercent(100);
     setIsLoading(false);
     setClips(newClips);
+
     if (newClips.length > 0) {
       setSelectedClipId(newClips[0].id);
       setBrandingConfig((prev) => ({
@@ -381,14 +444,14 @@ export default function Dashboard() {
     }
     setIsPlaying(false);
 
-    // Simpan otomatis ke My Projects
+    // Save project
     const newProject: VideoProject = {
       id: `proj_${Date.now()}`,
       name: title,
       createdAt: Date.now(),
       updatedAt: Date.now(),
-      sourceType,
-      sourceUrl: url,
+      sourceType: detectedSource,
+      sourceUrl: cleanUrl,
       localVideoUrl: localVideoUrl || undefined,
       youtubeId: ytId || undefined,
       thumbnailUrl: thumb,
@@ -402,15 +465,54 @@ export default function Dashboard() {
     };
     LocalStorageManager.saveProject(newProject);
     setSavedProjects(LocalStorageManager.getProjects());
+
+    showToast(`Berhasil membuat ${newClips.length} klip berurutan durasi ${clipLength}s!`);
   };
 
-  // Subtitle synchronization index
+  // Direct 1-Click Download for active clip
+  const handleDirectDownloadActiveClip = async (clip: ViralClip) => {
+    showToast(`Mengunduh berkas klip #${clip.rank}...`);
+
+    // 1. Download SRT subtitle
+    const srt = SubtitleFileExporter.generateSRT(clip.subtitles);
+    SubtitleFileExporter.downloadBlob(
+      srt,
+      `${clip.title.slice(0, 25)}_rank${clip.rank}.srt`,
+      'text/plain;charset=utf-8'
+    );
+
+    // 2. Download Copywriting
+    const txt = `=== VIRALCLIPPER AI PRO ===\nKLIP #${clip.rank} (${clip.durationSec} DETIK)\nTIMELINE: Detik ${clip.startSec} sampai ${clip.endSec}\n\n[HOOK]\n${clip.hookHeadline}\n\n[CAPTION]\n${clip.copywriting.caption}\n\n[HASHTAGS]\n${clip.copywriting.hashtags.join(' ')}\n`;
+    SubtitleFileExporter.downloadBlob(
+      txt,
+      `${clip.title.slice(0, 25)}_rank${clip.rank}_copywriting.txt`,
+      'text/plain;charset=utf-8'
+    );
+
+    // 3. Render real MP4 9:16 Video
+    try {
+      await ClientVideoExporter.recordAndDownloadClip({
+        thumbnailUrl,
+        title: `${clip.title}_rank${clip.rank}`,
+        durationSec: clip.durationSec,
+        hookText: clip.hookHeadline,
+        subtitleText: clip.subtitles[0]?.text?.slice(0, 32) || clip.hookHeadline,
+        watermarkText: brandingConfig.watermarkText,
+        fontFamily: styleConfig.fontFamily,
+        highlightColor: styleConfig.highlightColor,
+      });
+      showToast(`Video MP4 Klip #${clip.rank} berhasil diunduh!`);
+    } catch (e: any) {
+      console.warn('Video generator fallback:', e);
+    }
+  };
+
   const currentWords = activeClip?.subtitles?.[0]?.words || [];
   const activeWordIdx = Math.floor((currentPlaySec % 8) * (currentWords.length / 8));
 
   return (
-    <div className="flex h-screen w-screen bg-[#090a0d] text-neutral-100 font-sans overflow-hidden select-none">
-      {/* 1. LEFT SAAS SIDEBAR */}
+    <div className="flex flex-col lg:flex-row min-h-screen lg:h-screen w-screen bg-[#090a0d] text-neutral-100 font-sans select-none overflow-x-hidden">
+      {/* 1. LEFT SIDEBAR */}
       <Sidebar
         activeNav={activeNav}
         onNavigate={(nav) => setActiveNav(nav)}
@@ -419,37 +521,46 @@ export default function Dashboard() {
       />
 
       {/* 2. MAIN CONTENT AREA */}
-      <div className="flex-1 flex flex-col h-full overflow-y-auto custom-scrollbar">
+      <div className="flex-1 flex flex-col h-full lg:overflow-y-auto custom-scrollbar">
         {/* Top Header */}
-        <header className="h-14 border-b border-neutral-800/80 bg-[#0f1117]/90 backdrop-blur-md px-6 flex items-center justify-between sticky top-0 z-30 shrink-0">
-          <div className="flex items-center gap-2 text-xs">
-            <span className="font-bold text-white line-clamp-1 max-w-md">
+        <header className="h-14 border-b border-neutral-800/80 bg-[#0f1117]/90 backdrop-blur-md px-4 sm:px-6 flex items-center justify-between sticky top-0 z-30 shrink-0">
+          <div className="flex items-center gap-2 pl-10 lg:pl-0 text-xs">
+            <span className="font-bold text-white line-clamp-1 max-w-xs sm:max-w-md">
               {projectName}
             </span>
-            <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
+            <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 shrink-0">
               {clips.length} Klip Siap
             </span>
           </div>
 
-          <div className="flex items-center gap-3">
+          <div className="flex items-center gap-2">
             <button
               onClick={() => setIsSettingsOpen(true)}
-              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-neutral-800 bg-[#141620] hover:bg-neutral-800 text-xs font-semibold text-neutral-300 transition-all"
+              className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg border border-neutral-800 bg-[#141620] hover:bg-neutral-800 text-xs font-semibold text-neutral-300 transition-all"
             >
               <Settings className="w-3.5 h-3.5 text-indigo-400" />
-              Engine: {settings.provider}
+              <span className="hidden sm:inline">Engine:</span> {settings.provider}
             </button>
           </div>
         </header>
 
+        {/* Global Toast Notification */}
+        {toastMessage && (
+          <div className="fixed bottom-5 right-5 z-50 p-3 px-4 rounded-xl bg-emerald-600 text-white font-bold text-xs shadow-2xl flex items-center gap-2 animate-bounce">
+            <Check className="w-4 h-4" />
+            <span>{toastMessage}</span>
+          </div>
+        )}
+
         {/* VIEW: MY PROJECTS */}
         {activeNav === 'projects' && (
-          <div className="p-6 max-w-7xl mx-auto w-full">
+          <div className="p-4 sm:p-6 max-w-7xl mx-auto w-full">
             <MyProjectsView
               projects={savedProjects}
               onLoadProject={(p) => {
                 setProjectName(p.name);
                 setUrl(p.sourceUrl || '');
+                setSourceType(p.sourceType || 'youtube');
                 setYoutubeId(p.youtubeId || null);
                 setThumbnailUrl(p.thumbnailUrl);
                 setClips(p.clips);
@@ -469,12 +580,13 @@ export default function Dashboard() {
 
         {/* VIEW: SUBTITLE TEMPLATES */}
         {activeNav === 'templates' && (
-          <div className="p-6 max-w-7xl mx-auto w-full">
+          <div className="p-4 sm:p-6 max-w-7xl mx-auto w-full">
             <TemplatesView
               activePreset={styleConfig.preset}
               onApplyTemplate={(tpl) => {
                 setStyleConfig((prev) => ({ ...prev, ...tpl }));
                 setActiveNav('studio');
+                showToast('Preset subtitle berhasil diterapkan!');
               }}
             />
           </div>
@@ -482,9 +594,9 @@ export default function Dashboard() {
 
         {/* VIEW: VIDEO STUDIO & EDITOR */}
         {activeNav === 'studio' && (
-          <div className="p-5 space-y-5 max-w-7xl mx-auto w-full">
+          <div className="p-3 sm:p-5 space-y-4 sm:space-y-5 max-w-7xl mx-auto w-full">
             {/* Input & Parameters Control Bar */}
-            <div className="bg-[#12141a] border border-neutral-800/80 rounded-2xl p-4 shadow-xl">
+            <div className="bg-[#12141a] border border-neutral-800/80 rounded-2xl p-3 sm:p-4 shadow-xl">
               <div className="flex flex-col lg:flex-row items-center justify-between gap-3">
                 {/* Source Input */}
                 <div className="flex-1 w-full flex items-center gap-2">
@@ -494,10 +606,12 @@ export default function Dashboard() {
                       type="text"
                       value={url}
                       onChange={(e) => {
-                        setUrl(e.target.value);
-                        setSourceType('youtube');
+                        const val = e.target.value;
+                        setUrl(val);
+                        if (isTikTokUrl(val)) setSourceType('tiktok');
+                        else if (extractYouTubeId(val)) setSourceType('youtube');
                       }}
-                      placeholder="Tempel link video YouTube..."
+                      placeholder="Tempel tautan YouTube atau TikTok..."
                       className="w-full pl-9 pr-16 py-2 rounded-xl bg-[#0a0b0e] border border-neutral-800 focus:border-indigo-500 focus:outline-none text-xs text-white placeholder-neutral-500"
                     />
                     <button
@@ -512,7 +626,8 @@ export default function Dashboard() {
                   {/* Local Video Upload Option */}
                   <label className="flex items-center gap-1.5 px-3 py-2 rounded-xl border border-neutral-800 bg-[#0a0b0e] hover:bg-neutral-800/80 text-xs font-semibold text-neutral-300 cursor-pointer transition-all shrink-0">
                     <Upload className="w-3.5 h-3.5 text-indigo-400" />
-                    <span>Upload Lokal</span>
+                    <span className="hidden sm:inline">Upload Lokal</span>
+                    <span className="sm:hidden">Upload</span>
                     <input
                       type="file"
                       accept="video/mp4,video/webm,video/quicktime"
@@ -523,9 +638,9 @@ export default function Dashboard() {
                 </div>
 
                 {/* Duration & AI Auto-Cut Button */}
-                <div className="flex items-center gap-2.5 w-full lg:w-auto">
+                <div className="flex flex-wrap items-center justify-between sm:justify-start gap-2.5 w-full lg:w-auto">
                   <div className="flex items-center bg-[#0a0b0e] p-1 rounded-xl border border-neutral-800 text-xs">
-                    <span className="text-[11px] text-neutral-400 px-2 font-medium">Durasi Klip:</span>
+                    <span className="text-[11px] text-neutral-400 px-2 font-medium">Durasi:</span>
                     {([30, 60, 90] as const).map((d) => (
                       <button
                         key={d}
@@ -551,7 +666,7 @@ export default function Dashboard() {
                     }`}
                   >
                     <Wand2 className="w-3.5 h-3.5" />
-                    {isLoading ? 'Memindai Klip...' : `AI Auto-Cut 5 Klip`}
+                    {isLoading ? 'Memproses Klip...' : `AI Auto-Cut 5 Klip`}
                   </button>
                 </div>
               </div>
@@ -574,15 +689,15 @@ export default function Dashboard() {
             </div>
 
             {/* 3-Column Studio Layout */}
-            <div className="grid grid-cols-1 lg:grid-cols-12 gap-5">
-              {/* Kolom 1: Smart Clips Rank List (3 Kolom) */}
-              <div className="lg:col-span-3 flex flex-col gap-2 bg-[#12141a] border border-neutral-800/80 rounded-2xl p-3.5 h-[640px]">
+            <div className="grid grid-cols-1 lg:grid-cols-12 gap-4 sm:gap-5">
+              {/* Kolom 1: Smart Clips Rank List */}
+              <div className="lg:col-span-3 flex flex-col gap-2 bg-[#12141a] border border-neutral-800/80 rounded-2xl p-3.5 max-h-[500px] lg:h-[640px]">
                 <div className="flex items-center justify-between pb-2 border-b border-neutral-800/80">
                   <span className="text-xs font-bold text-white flex items-center gap-1.5">
                     <Film className="w-3.5 h-3.5 text-indigo-400" />
                     Smart Clips ({clips.length})
                   </span>
-                  <span className="text-[10px] text-neutral-400">Rank #1 Paling Viral</span>
+                  <span className="text-[10px] text-neutral-400 font-mono">Rank #1 - #{clips.length}</span>
                 </div>
 
                 <div className="flex-1 overflow-y-auto space-y-2 pr-1 custom-scrollbar">
@@ -633,7 +748,7 @@ export default function Dashboard() {
                         </p>
 
                         <div className="flex items-center justify-between text-[10px] text-neutral-500 border-t border-neutral-800/80 pt-1.5">
-                          <span className="font-mono">
+                          <span className="font-mono text-indigo-400">
                             ⏱️ {Math.floor(clip.startSec / 60)}:{String(clip.startSec % 60).padStart(2, '0')} - {Math.floor(clip.endSec / 60)}:{String(clip.endSec % 60).padStart(2, '0')}
                           </span>
                           <span className={isSelected ? 'text-indigo-400 font-bold' : 'text-neutral-500'}>
@@ -650,13 +765,13 @@ export default function Dashboard() {
                     setClipsToExport(clips);
                     setIsExportOpen(true);
                   }}
-                  className="w-full py-2 px-3 rounded-xl bg-neutral-800 hover:bg-neutral-700 text-white font-bold text-xs flex items-center justify-center gap-1.5 border border-neutral-700 transition-all"
+                  className="w-full py-2 px-3 rounded-xl bg-neutral-800 hover:bg-neutral-700 text-white font-bold text-xs flex items-center justify-center gap-1.5 border border-neutral-700 transition-all shrink-0"
                 >
-                  <Download className="w-3.5 h-3.5" /> Export All {clips.length} Clips
+                  <Download className="w-3.5 h-3.5" /> Download All ({clips.length})
                 </button>
               </div>
 
-              {/* Kolom 2: Central Studio Player 9:16 (5 Kolom) */}
+              {/* Kolom 2: Central Studio Player 9:16 */}
               <div className="lg:col-span-5 flex justify-center">
                 <StudioPlayer
                   sourceType={sourceType}
@@ -680,17 +795,16 @@ export default function Dashboard() {
                   brandingConfig={brandingConfig}
                   onOpenExport={() => {
                     if (activeClip) {
-                      setClipsToExport([activeClip]);
-                      setIsExportOpen(true);
+                      handleDirectDownloadActiveClip(activeClip);
                     }
                   }}
                 />
               </div>
 
-              {/* Kolom 3: Studio Editor Controls (4 Kolom) */}
-              <div className="lg:col-span-4 flex flex-col bg-[#12141a] border border-neutral-800/80 rounded-2xl p-4 h-[640px]">
+              {/* Kolom 3: Studio Editor Controls */}
+              <div className="lg:col-span-4 flex flex-col bg-[#12141a] border border-neutral-800/80 rounded-2xl p-4 max-h-[500px] lg:h-[640px]">
                 {/* Tabs */}
-                <div className="flex bg-[#0a0b0e] p-1 rounded-xl border border-neutral-800 mb-3.5">
+                <div className="flex bg-[#0a0b0e] p-1 rounded-xl border border-neutral-800 mb-3.5 shrink-0">
                   {[
                     { key: 'subtitles', label: 'Subtitle Style', icon: Type },
                     { key: 'copywriting', label: 'Copywriting', icon: Share2 },
@@ -719,11 +833,11 @@ export default function Dashboard() {
                   <div className="flex-1 overflow-y-auto space-y-3.5 pr-1 text-xs custom-scrollbar">
                     <div>
                       <label className="text-neutral-400 font-semibold mb-1.5 block">
-                        Bentuk Kotak Subtitle (Pill / Card)
+                        Bentuk Kotak Subtitle
                       </label>
                       <div className="grid grid-cols-2 gap-2">
                         {[
-                          { id: 'pill', name: 'Rounded Pill (Rekomendasi)' },
+                          { id: 'pill', name: 'Rounded Pill (Populer)' },
                           { id: 'card', name: 'Solid Card Box' },
                           { id: 'glow', name: 'Neon Glow Frame' },
                           { id: 'minimal', name: 'Clean Transparent' },
@@ -870,7 +984,7 @@ export default function Dashboard() {
                   <div className="flex-1 overflow-y-auto space-y-3.5 pr-1 text-xs custom-scrollbar">
                     <div>
                       <div className="flex items-center justify-between mb-1">
-                        <label className="text-neutral-400 font-semibold">Hook Banner (3 Detik Awal)</label>
+                        <label className="text-neutral-400 font-semibold">Hook Banner (Detik Awal)</label>
                         <input
                           type="checkbox"
                           checked={brandingConfig.showHookBanner}
@@ -923,6 +1037,8 @@ export default function Dashboard() {
               clips={clips}
               selectedClipId={selectedClipId}
               thumbnailUrl={thumbnailUrl}
+              sourceType={sourceType}
+              youtubeId={youtubeId}
               onSelectClip={(id) => {
                 setSelectedClipId(id);
                 setIsPlaying(false);
@@ -937,6 +1053,9 @@ export default function Dashboard() {
                 setClipsToExport(selected);
                 setIsExportOpen(true);
               }}
+              onDirectDownloadClip={(clip) => {
+                handleDirectDownloadActiveClip(clip);
+              }}
             />
           </div>
         )}
@@ -948,6 +1067,8 @@ export default function Dashboard() {
         onClose={() => setIsExportOpen(false)}
         clipsToExport={clipsToExport}
         styleConfig={styleConfig}
+        thumbnailUrl={thumbnailUrl}
+        watermarkText={brandingConfig.watermarkText}
       />
 
       {/* Settings Modal */}
@@ -957,6 +1078,7 @@ export default function Dashboard() {
         onSave={(updated) => {
           setSettings(updated);
           LocalStorageManager.saveSettings(updated);
+          showToast('Pengaturan AI berhasil disimpan.');
         }}
         currentSettings={settings}
       />

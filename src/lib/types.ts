@@ -7,8 +7,8 @@ export type AIProvider =
   | 'custom';
 
 export type SubtitlePreset = 'hormozi' | 'neon' | 'minimalist' | 'card' | 'comic';
-export type SubtitleFont = 'Montserrat' | 'Impact' | 'Inter' | 'Arial Black' | 'Comic Sans MS' | 'Bebas Neue';
-export type AspectRatio = '9:16' | '1:1' | '16:9';
+export type SubtitleFont = 'Montserrat' | 'Impact' | 'Inter' | 'Arial Black' | 'Comic Sans MS';
+export type SourceType = 'youtube' | 'tiktok' | 'local';
 
 export interface AISettings {
   provider: AIProvider;
@@ -19,7 +19,7 @@ export interface AISettings {
 
 export interface SubtitleWord {
   word: string;
-  start: number; // seconds relative to clip
+  start: number;
   end: number;
   emoji?: string;
 }
@@ -76,10 +76,11 @@ export interface VideoProject {
   name: string;
   createdAt: number;
   updatedAt: number;
-  sourceType: 'youtube' | 'local';
+  sourceType: SourceType;
   sourceUrl?: string;
   localVideoUrl?: string;
   youtubeId?: string;
+  tiktokId?: string;
   thumbnailUrl: string;
   totalDurationSec: number;
   clipLength: 30 | 60 | 90;
@@ -88,13 +89,4 @@ export interface VideoProject {
   selectedClipId: string;
   styleConfig: SubtitleStyleConfig;
   brandingConfig: BrandingConfig;
-}
-
-export interface BackendJobStatus {
-  jobId: string;
-  status: 'queued' | 'processing' | 'completed' | 'failed';
-  progress: number;
-  message: string;
-  resultUrl?: string;
-  error?: string;
 }
