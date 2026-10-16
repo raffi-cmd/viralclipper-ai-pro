@@ -10,19 +10,22 @@ import {
   CheckCircle2,
   Sparkles,
   Loader2,
-  Layers
+  Layers,
+  Server,
+  AlertTriangle
 } from 'lucide-react';
-import { ViralClip, SubtitleStyleConfig } from '@/lib/types';
+import { ViralClip, SubtitleStyleConfig, BrandingConfig } from '@/lib/types';
 import { SubtitleFileExporter } from '@/lib/subtitle-generator';
-import { ClientVideoExporter } from '@/lib/client-video-exporter';
+import { ClientVideoRenderer } from '@/lib/rendering-engine/client-renderer';
 
 interface ExportModalProps {
   isOpen: boolean;
   onClose: () => void;
   clipsToExport: ViralClip[];
   styleConfig: SubtitleStyleConfig;
+  brandingConfig: BrandingConfig;
   thumbnailUrl: string;
-  watermarkText?: string;
+  localMediaUrl?: string;
 }
 
 export const ExportModal: React.FC<ExportModalProps> = ({
@@ -30,8 +33,9 @@ export const ExportModal: React.FC<ExportModalProps> = ({
   onClose,
   clipsToExport,
   styleConfig,
+  brandingConfig,
   thumbnailUrl,
-  watermarkText = 'ViralClipper',
+  localMediaUrl,
 }) => {
   const [downloadSuccess, setDownloadSuccess] = useState<string | null>(null);
   const [isExportingVideo, setIsExportingVideo] = useState(false);
@@ -40,31 +44,37 @@ export const ExportModal: React.FC<ExportModalProps> = ({
 
   if (!isOpen || clipsToExport.length === 0) return null;
 
-  // 1. Direct Video Render & Download (Real MP4/WebM 9:16 video!)
+  // 1. Direct Video Render & Download
   const handleDownloadRealVideo = async (clip: ViralClip) => {
     try {
       setIsExportingVideo(true);
       setExportProgress(10);
-      setExportStatusText(`Menyiapkan klip #${clip.rank}...`);
+      setExportStatusText(`Menyiapkan perenderan klip #${clip.rank}...`);
 
-      const subtitleSnippet = clip.subtitles[0]?.text?.slice(0, 35) || clip.hookHeadline;
-
-      await ClientVideoExporter.recordAndDownloadClip({
+      const result = await ClientVideoRenderer.renderClip({
+        localMediaUrl,
         thumbnailUrl,
-        title: `${clip.title}_rank${clip.rank}`,
+        startSec: clip.startSec,
         durationSec: clip.durationSec,
         hookText: clip.hookHeadline,
-        subtitleText: subtitleSnippet,
-        watermarkText,
-        fontFamily: styleConfig.fontFamily,
-        highlightColor: styleConfig.highlightColor,
+        subtitles: clip.subtitles,
+        styleConfig,
+        brandingConfig,
         onProgress: (percent, msg) => {
           setExportProgress(percent);
           setExportStatusText(msg);
         },
       });
 
-      setDownloadSuccess(`Video 9:16 untuk Klip #${clip.rank} berhasil diunduh ke komputer Anda!`);
+      // Trigger actual download of the rendered video blob
+      const a = document.createElement('a');
+      a.href = result.blobUrl;
+      a.download = result.fileName;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+
+      setDownloadSuccess(`File video MP4 untuk Klip #${clip.rank} berhasil diunduh!`);
       setTimeout(() => setDownloadSuccess(null), 4000);
     } catch (err: any) {
       alert(`Gagal merender video: ${err?.message || 'Terjadi kesalahan'}`);
@@ -87,9 +97,21 @@ export const ExportModal: React.FC<ExportModalProps> = ({
     setTimeout(() => setDownloadSuccess(null), 3000);
   };
 
-  // 3. Download Copywriting Text
+  // 3. Download Subtitle ASS
+  const handleDownloadASS = (clip: ViralClip) => {
+    const assContent = SubtitleFileExporter.generateASS(clip.subtitles, styleConfig);
+    SubtitleFileExporter.downloadBlob(
+      assContent,
+      `styled_${clip.id}_rank${clip.rank}.ass`,
+      'text/plain;charset=utf-8'
+    );
+    setDownloadSuccess(`File ASS Styling Klip #${clip.rank} berhasil diunduh!`);
+    setTimeout(() => setDownloadSuccess(null), 3000);
+  };
+
+  // 4. Download Copywriting Text
   const handleDownloadCopywriting = (clip: ViralClip) => {
-    const content = `=== VIRALCLIPPER AI PRO EXPORT ===\nKLIP: #${clip.rank} - ${clip.title}\nVIRAL RETENTION SCORE: ${clip.viralScore}%\nDURASI: ${clip.durationSec} Detik (Timeline: ${Math.floor(clip.startSec / 60)}:${String(clip.startSec % 60).padStart(2, '0')} - ${Math.floor(clip.endSec / 60)}:${String(clip.endSec % 60).padStart(2, '0')})\n\n[HOOK HEADLINE]\n${clip.copywriting.hookHeadline}\n\n[CAPTION MEDIA SOSIAL]\n${clip.copywriting.caption}\n\n[VIRAL HASHTAGS]\n${clip.copywriting.hashtags.join(' ')}\n\n[SUBTITLE TEXT]\n${clip.subtitles.map((s) => s.text).join('\n')}\n`;
+    const content = `=== VIRALCLIPPER AI PRO EXPORT ===\nKLIP: #${clip.rank} - ${clip.title}\nVIRAL RETENTION SCORE: ${clip.viralScore}%\nDURASI KLIP: ${clip.durationSec} Detik\nRENTANG TIMELINE SUMBER: Detik ${clip.startSec} sampai ${clip.endSec}\n\n[HOOK HEADLINE]\n${clip.copywriting.hookHeadline}\n\n[CAPTION MEDIA SOSIAL]\n${clip.copywriting.caption}\n\n[VIRAL HASHTAGS]\n${clip.copywriting.hashtags.join(' ')}\n\n[TRANSKRIP SUBTITLE]\n${clip.subtitles.map((s) => s.text).join('\n')}\n`;
     SubtitleFileExporter.downloadBlob(
       content,
       `copywriting_rank${clip.rank}.txt`,
@@ -99,14 +121,14 @@ export const ExportModal: React.FC<ExportModalProps> = ({
     setTimeout(() => setDownloadSuccess(null), 3000);
   };
 
-  // 4. One-Click: Download All (Video + SRT + Copywriting)
+  // 5. One-Click Bundle: Video + SRT + ASS + Copywriting
   const handleDownloadBundle = async (clip: ViralClip) => {
     handleDownloadSRT(clip);
     handleDownloadCopywriting(clip);
     await handleDownloadRealVideo(clip);
   };
 
-  const firstClip = clipsToExport[0];
+  const primaryClip = clipsToExport[0];
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm p-4 overflow-y-auto">
@@ -118,9 +140,9 @@ export const ExportModal: React.FC<ExportModalProps> = ({
               <Download className="w-4 h-4" />
             </div>
             <div>
-              <h3 className="text-base font-bold text-white">Download & Export Klip</h3>
+              <h3 className="text-base font-bold text-white">Export & Download Center</h3>
               <p className="text-xs text-neutral-400">
-                Siap diunduh langsung untuk {clipsToExport.length} klip
+                Pilih format berkas untuk {clipsToExport.length} klip terpilih
               </p>
             </div>
           </div>
@@ -132,7 +154,7 @@ export const ExportModal: React.FC<ExportModalProps> = ({
           </button>
         </div>
 
-        {/* Video Render Progress */}
+        {/* Video Render Progress Bar */}
         {isExportingVideo && (
           <div className="mt-4 p-4 rounded-xl bg-indigo-500/10 border border-indigo-500/30 text-indigo-300 text-xs space-y-2">
             <div className="flex items-center justify-between font-bold">
@@ -166,19 +188,19 @@ export const ExportModal: React.FC<ExportModalProps> = ({
             <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
               <div>
                 <span className="text-[10px] uppercase font-bold tracking-wider text-emerald-400 flex items-center gap-1">
-                  <Sparkles className="w-3 h-3" /> Rekomendasi Instan
+                  <Sparkles className="w-3 h-3" /> Paket Siap Upload (Rekomendasi)
                 </span>
                 <h4 className="font-bold text-white text-sm mt-0.5">
-                  Unduh Paket Lengkap (Video 9:16 + Subtitle + Naskah)
+                  Unduh Paket Lengkap (Video MP4 9:16 + Subtitle + Naskah)
                 </h4>
                 <p className="text-[11px] text-neutral-400 mt-0.5">
-                  Menghasilkan file video MP4 9:16, berkas subtitle .SRT, dan caption siap posting.
+                  Menghasilkan file video MP4 9:16 vertikal, berkas subtitle .SRT tersinkronisasi, dan caption siap posting.
                 </p>
               </div>
 
               <button
                 disabled={isExportingVideo}
-                onClick={() => handleDownloadBundle(firstClip)}
+                onClick={() => handleDownloadBundle(primaryClip)}
                 className={`px-4 py-2.5 rounded-xl font-bold text-xs whitespace-nowrap transition-all flex items-center justify-center gap-2 shadow-lg ${
                   isExportingVideo
                     ? 'bg-neutral-800 text-neutral-500 cursor-not-allowed'
@@ -186,7 +208,7 @@ export const ExportModal: React.FC<ExportModalProps> = ({
                 }`}
               >
                 <Download className="w-4 h-4" />
-                <span>Unduh Sekarang</span>
+                <span>Unduh Paket</span>
               </button>
             </div>
           </div>
@@ -198,7 +220,7 @@ export const ExportModal: React.FC<ExportModalProps> = ({
               {/* MP4 Video */}
               <button
                 disabled={isExportingVideo}
-                onClick={() => handleDownloadRealVideo(firstClip)}
+                onClick={() => handleDownloadRealVideo(primaryClip)}
                 className="p-3 rounded-xl border border-neutral-800 bg-[#161822] hover:border-neutral-700 hover:bg-[#1c1f2b] text-left transition-all group"
               >
                 <div className="flex items-center justify-between mb-1.5">

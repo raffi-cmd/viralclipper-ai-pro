@@ -1,12 +1,13 @@
 {
   "name": "viralclipper-ai-pro",
-  "version": "1.0.0",
+  "version": "2.0.0",
   "private": true,
   "scripts": {
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "lint": "next lint"
+    "lint": "next lint",
+    "server": "node server/server.ts"
   },
   "dependencies": {
     "@google/generative-ai": "^0.21.0",
