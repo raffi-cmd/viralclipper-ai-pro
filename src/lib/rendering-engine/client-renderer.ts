@@ -9,6 +9,7 @@ export interface RenderOptions {
   subtitles: SubtitleSegment[];
   styleConfig: SubtitleStyleConfig;
   brandingConfig: BrandingConfig;
+  aspectRatio?: '9:16' | '1:1' | '16:9';
   onProgress?: (percent: number, stepText: string) => void;
 }
 
@@ -21,7 +22,7 @@ export interface RenderResult {
 
 export class ClientVideoRenderer {
   /**
-   * Renders an actual, physical 9:16 portrait video file with audio, subtitles, and branding.
+   * Renders an actual, physical video file with audio, subtitles, and branding.
    */
   static async renderClip(options: RenderOptions): Promise<RenderResult> {
     const {
@@ -33,14 +34,24 @@ export class ClientVideoRenderer {
       subtitles,
       styleConfig,
       brandingConfig,
+      aspectRatio = '9:16',
       onProgress,
     } = options;
 
-    if (onProgress) onProgress(5, 'Menginisialisasi canvas rendering 9:16 portrait...');
+    if (onProgress) onProgress(5, `Menginisialisasi canvas rendering (${aspectRatio})...`);
 
     const canvas = document.createElement('canvas');
-    canvas.width = 720;
-    canvas.height = 1280;
+    if (aspectRatio === '1:1') {
+      canvas.width = 1080;
+      canvas.height = 1080;
+    } else if (aspectRatio === '16:9') {
+      canvas.width = 1920;
+      canvas.height = 1080;
+    } else {
+      // Default 9:16
+      canvas.width = 720;
+      canvas.height = 1280;
+    }
     const ctx = canvas.getContext('2d', { alpha: false });
     if (!ctx) throw new Error('Canvas 2D context tidak tersedia di browser.');
 
@@ -134,7 +145,8 @@ export class ClientVideoRenderer {
 
         const blob = new Blob(recordedChunks, { type: mimeType });
         const blobUrl = URL.createObjectURL(blob);
-        const fileName = `clip_${Math.round(startSec)}s_${durationSec}s_9x16.mp4`;
+        const ratioSlug = aspectRatio.replace(':', 'x');
+        const fileName = `clip_${Math.round(startSec)}s_${durationSec}s_${ratioSlug}.mp4`;
 
         resolve({
           blob,

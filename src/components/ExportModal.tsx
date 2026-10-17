@@ -37,6 +37,7 @@ export const ExportModal: React.FC<ExportModalProps> = ({
   thumbnailUrl,
   localMediaUrl,
 }) => {
+  const [selectedAspectRatio, setSelectedAspectRatio] = useState<'9:16' | '1:1' | '16:9'>('9:16');
   const [downloadSuccess, setDownloadSuccess] = useState<string | null>(null);
   const [isExportingVideo, setIsExportingVideo] = useState(false);
   const [exportProgress, setExportProgress] = useState<number>(0);
@@ -49,17 +50,18 @@ export const ExportModal: React.FC<ExportModalProps> = ({
     try {
       setIsExportingVideo(true);
       setExportProgress(10);
-      setExportStatusText(`Menyiapkan perenderan klip #${clip.rank}...`);
+      setExportStatusText(`Menyiapkan perenderan klip #${clip.rank} (${selectedAspectRatio})...`);
 
       const result = await ClientVideoRenderer.renderClip({
         localMediaUrl,
-        thumbnailUrl,
+        thumbnailUrl: (clip as any).customThumbnailUrl || thumbnailUrl,
         startSec: clip.startSec,
         durationSec: clip.durationSec,
         hookText: clip.hookHeadline,
         subtitles: clip.subtitles,
         styleConfig,
         brandingConfig,
+        aspectRatio: selectedAspectRatio,
         onProgress: (percent, msg) => {
           setExportProgress(percent);
           setExportStatusText(msg);
@@ -183,6 +185,31 @@ export const ExportModal: React.FC<ExportModalProps> = ({
 
         {/* Action Options */}
         <div className="space-y-4 py-4 text-xs">
+          {/* Format / Aspect Ratio Selector */}
+          <div className="bg-[#161822] border border-neutral-800 p-3 rounded-xl space-y-1.5">
+            <span className="text-[11px] font-bold text-neutral-300">Pilih Rasio Aspek Video Render:</span>
+            <div className="grid grid-cols-3 gap-2">
+              {[
+                { id: '9:16', label: '9:16 Portrait (TikTok/Reel)' },
+                { id: '1:1', label: '1:1 Square (Feed/Post)' },
+                { id: '16:9', label: '16:9 Landscape (YouTube)' },
+              ].map((r) => (
+                <button
+                  key={r.id}
+                  type="button"
+                  onClick={() => setSelectedAspectRatio(r.id as any)}
+                  className={`py-1.5 px-2 rounded-lg font-bold text-center border transition-all ${
+                    selectedAspectRatio === r.id
+                      ? 'border-indigo-500 bg-indigo-500/20 text-indigo-300'
+                      : 'border-neutral-800 bg-neutral-900 text-neutral-400 hover:text-white'
+                  }`}
+                >
+                  {r.label}
+                </button>
+              ))}
+            </div>
+          </div>
+
           {/* Featured: Instant 1-Click Bundle Download */}
           <div className="p-4 rounded-2xl bg-gradient-to-r from-emerald-950/40 via-teal-950/30 to-[#161822] border border-emerald-500/30">
             <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
@@ -227,9 +254,9 @@ export const ExportModal: React.FC<ExportModalProps> = ({
                   <Film className="w-4 h-4 text-indigo-400" />
                   <span className="text-[10px] font-mono text-neutral-400">.MP4</span>
                 </div>
-                <div className="font-bold text-white group-hover:text-indigo-300">Video 9:16 (MP4)</div>
+                <div className="font-bold text-white group-hover:text-indigo-300">Video {selectedAspectRatio} (MP4)</div>
                 <p className="text-[10px] text-neutral-400 mt-0.5">
-                  Video klip portrait dengan subtitle & hook banner terpasang.
+                  Video klip berformat {selectedAspectRatio} dengan subtitle & hook banner terpasang.
                 </p>
               </button>
 

@@ -77,10 +77,24 @@ const server = http.createServer((req, res) => {
         const hookText = (body.hookTitle || 'VIRAL MOMENT').replace(/[':"]/g, '');
         const watermark = (body.watermarkText || 'ViralClipper').replace(/[':"]/g, '');
 
-        let filterGraph = `[0:v]trim=start=${clipStart}:duration=${clipDuration},setpts=PTS-STARTPTS,split=2[raw_bg][raw_fg];[raw_bg]scale=1080:1920:force_original_aspect_ratio=increase,crop=1080:1920,boxblur=20:5[bg];[raw_fg]scale=1080:-2[fg];[bg][fg]overlay=(W-w)/2:(H-h)/2[v_base]`;
+        const aspectRatio = body.aspectRatio || '9:16';
+        let targetW = 1080;
+        let targetH = 1920;
+        if (aspectRatio === '1:1') {
+          targetW = 1080;
+          targetH = 1080;
+        } else if (aspectRatio === '16:9') {
+          targetW = 1920;
+          targetH = 1080;
+        }
+
+        let filterGraph = `[0:v]trim=start=${clipStart}:duration=${clipDuration},setpts=PTS-STARTPTS,split=2[raw_bg][raw_fg];[raw_bg]scale=${targetW}:${targetH}:force_original_aspect_ratio=increase,crop=${targetW}:${targetH},boxblur=20:5[bg];[raw_fg]scale=${targetW}:-2[fg];[bg][fg]overlay=(W-w)/2:(H-h)/2[v_base]`;
 
         if (hasArialFont) {
-          filterGraph += `;[v_base]drawbox=x=60:y=180:w=960:h=120:color=red@0.9:t=fill:enable='between(t,0,3)',drawtext=fontfile='${fontPath}':text='${hookText}':x=(w-text_w)/2:y=220:fontsize=46:fontcolor=white:enable='between(t,0,3)',drawtext=fontfile='${fontPath}':text='@${watermark}':x=w-tw-50:y=h-th-70:fontsize=28:fontcolor=white@0.7[v_out]`;
+          const bannerY = aspectRatio === '16:9' ? 60 : 180;
+          const textY = aspectRatio === '16:9' ? 100 : 220;
+          const bannerW = targetW - 120;
+          filterGraph += `;[v_base]drawbox=x=60:y=${bannerY}:w=${bannerW}:h=120:color=red@0.9:t=fill:enable='between(t,0,3)',drawtext=fontfile='${fontPath}':text='${hookText}':x=(w-text_w)/2:y=${textY}:fontsize=44:fontcolor=white:enable='between(t,0,3)',drawtext=fontfile='${fontPath}':text='@${watermark}':x=w-tw-50:y=h-th-50:fontsize=26:fontcolor=white@0.7[v_out]`;
         } else {
           filterGraph += `;[v_base]null[v_out]`;
         }

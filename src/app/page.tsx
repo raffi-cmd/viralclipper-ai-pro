@@ -431,7 +431,13 @@ export default function Dashboard() {
       {/* 1. LEFT SIDEBAR */}
       <Sidebar
         activeNav={activeNav}
-        onNavigate={(nav) => setActiveNav(nav)}
+        onNavigate={(nav) => {
+          if (nav === 'settings') {
+            setIsSettingsOpen(true);
+          } else {
+            setActiveNav(nav);
+          }
+        }}
         savedProjectsCount={savedProjects.length}
         savedClipsCount={clips.length}
       />
@@ -504,6 +510,54 @@ export default function Dashboard() {
                 setStyleConfig((prev) => ({ ...prev, ...tpl }));
                 setActiveNav('studio');
                 showToast('Preset subtitle diterapkan.');
+              }}
+            />
+          </div>
+        )}
+
+        {/* VIEW: MY CLIPS GALLERY */}
+        {activeNav === 'clips' && (
+          <div className="p-4 sm:p-6 max-w-7xl mx-auto w-full space-y-4">
+            <div className="flex items-center justify-between pb-3 border-b border-neutral-800">
+              <div>
+                <h3 className="text-base font-bold text-white flex items-center gap-2">
+                  <Film className="w-5 h-5 text-indigo-400" />
+                  Koleksi Klip Aktif ({clips.length} Klip Tersedia)
+                </h3>
+                <p className="text-xs text-neutral-400 mt-0.5">
+                  Pratinjau, edit thumbnail, dan unduh klip video yang telah dihasilkan dari proyek saat ini.
+                </p>
+              </div>
+              <button
+                onClick={() => setActiveNav('studio')}
+                className="px-3 py-1.5 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white font-bold text-xs"
+              >
+                Buka di Studio Editor
+              </button>
+            </div>
+
+            <ClipGallery
+              clips={clips}
+              selectedClipId={selectedClipId}
+              defaultThumbnailUrl={thumbnailUrl}
+              sourceCategory={sourceCategory}
+              onSelectClip={(id) => {
+                setSelectedClipId(id);
+                setActiveNav('studio');
+              }}
+              onToggleClipSelection={(id) => {
+                setClips((prev) =>
+                  prev.map((c) => (c.id === id ? { ...c, isSelected: !c.isSelected } : c))
+                );
+              }}
+              onExportSelected={(selected) => {
+                setClipsToExport(selected);
+                setIsExportOpen(true);
+              }}
+              onDirectDownloadClip={handleDirectDownloadClip}
+              onOpenThumbnailEditorForClip={(clip) => {
+                setClipToEditThumbnail(clip);
+                setIsThumbnailEditorOpen(true);
               }}
             />
           </div>

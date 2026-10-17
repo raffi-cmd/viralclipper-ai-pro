@@ -147,6 +147,66 @@ runTest('Media Engine - Extract candidate frame thumbnail and verify non-zero si
   fs.unlinkSync(thumbPath);
 });
 
+// ---------------------------------------------------------------------------
+// TEST 5: Multi-Format Aspect Ratio & Project History
+// ---------------------------------------------------------------------------
+runTest('Multi-Format - Validate dimensions calculation for 9:16, 1:1, and 16:9', () => {
+  const getDims = (ratio) => {
+    if (ratio === '1:1') return { w: 1080, h: 1080 };
+    if (ratio === '16:9') return { w: 1920, h: 1080 };
+    return { w: 720, h: 1280 };
+  };
+
+  const p = getDims('9:16');
+  if (p.w !== 720 || p.h !== 1280) throw new Error('9:16 dims invalid');
+  const sq = getDims('1:1');
+  if (sq.w !== 1080 || sq.h !== 1080) throw new Error('1:1 dims invalid');
+  const ls = getDims('16:9');
+  if (ls.w !== 1920 || ls.h !== 1080) throw new Error('16:9 dims invalid');
+});
+
+runTest('Project History - Project metadata structure & serialization integrity', () => {
+  const projectFixture = {
+    id: 'proj_test_123',
+    name: 'Balap Mobil GT3',
+    createdAt: Date.now(),
+    updatedAt: Date.now(),
+    sourceCategory: 'youtube',
+    sourceType: 'youtube',
+    sourceUrl: 'https://youtu.be/EodfcT2s9Xo',
+    thumbnailUrl: 'https://img.youtube.com/vi/EodfcT2s9Xo/hqdefault.jpg',
+    totalDurationSec: 300,
+    clipLength: 60,
+    maxClips: 5,
+    editingStyle: 'emotional',
+    highlightFocus: 'emotional',
+    clips: [
+      {
+        id: 'clip_1',
+        rank: 1,
+        viralScore: 98,
+        title: 'Momen Start Balapan',
+        hookHeadline: 'DETIK-DETIK PALING MENEGANGKAN!',
+        reasonWhyViral: 'Tensi tinggi di tikungan pertama',
+        startSec: 0,
+        endSec: 60,
+        durationSec: 60,
+        subtitles: [],
+        copywriting: { hookHeadline: 'TEST', caption: 'TEST', hashtags: ['#viral'] }
+      }
+    ],
+    selectedClipId: 'clip_1',
+    styleConfig: { fontFamily: 'Montserrat', fontSize: 18, textColor: '#FFF', highlightColor: '#39FF14', preset: 'hormozi', boxStyle: 'pill', position: 'bottom', letterSpacing: '0.02em', uppercase: true },
+    brandingConfig: { showHookBanner: true, hookBannerText: 'TEST', showWatermark: true, watermarkText: 'ViralClipper', watermarkPosition: 'bottom-right' }
+  };
+
+  const serialized = JSON.stringify(projectFixture);
+  const parsed = JSON.parse(serialized);
+  if (parsed.id !== projectFixture.id || parsed.clips.length !== 1) {
+    throw new Error('Project serialization corrupt');
+  }
+});
+
 // Clean up test files
 try {
   if (fs.existsSync(tmpTestVideo)) fs.unlinkSync(tmpTestVideo);
