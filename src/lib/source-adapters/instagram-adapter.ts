@@ -7,7 +7,7 @@ export class InstagramAdapter implements SourceAdapter {
 
   canHandle(input: string | File): boolean {
     if (typeof input !== 'string') return false;
-    return /instagram\.com\/(reel|p|tv)\//i.test(input);
+    return /instagram\.com\/(reel|reels|p|tv|share)/i.test(input);
   }
 
   validate(input: string | File): SourceValidationResult {
@@ -15,11 +15,11 @@ export class InstagramAdapter implements SourceAdapter {
       return { isValid: false, category: 'instagram', errorMessage: 'Tautan Instagram harus berupa URL teks.' };
     }
     const clean = input.trim();
-    if (!/instagram\.com\/(reel|p|tv)\//i.test(clean)) {
+    if (!/instagram\.com\/(?:reel|reels|p|tv|share)\/([a-zA-Z0-9_-]+)/i.test(clean)) {
       return {
         isValid: false,
         category: 'instagram',
-        errorMessage: 'URL Instagram tidak valid. Gunakan format seperti https://www.instagram.com/reel/...',
+        errorMessage: 'URL Instagram tidak valid. Gunakan format seperti https://www.instagram.com/reel/... atau https://www.instagram.com/p/...',
       };
     }
     return {
@@ -31,8 +31,8 @@ export class InstagramAdapter implements SourceAdapter {
 
   async getMetadata(input: string | File): Promise<SourceMetadata> {
     const url = typeof input === 'string' ? input.trim() : '';
-    const match = url.match(/instagram\.com\/(reel|p)\/([a-zA-Z0-9_-]+)/);
-    const shortcode = match ? match[2] : 'reel';
+    const match = url.match(/instagram\.com\/(?:reel|reels|p|tv|share)\/([a-zA-Z0-9_-]+)/i);
+    const shortcode = match ? match[1] : 'reel';
     const title = `Instagram Reel (${shortcode})`;
     const topic = ThumbnailEngine.detectTopic(title);
     const thumb = ThumbnailEngine.getTopicFallbackImage(topic);
@@ -45,18 +45,22 @@ export class InstagramAdapter implements SourceAdapter {
       durationSec: 90,
       canExtractDirectBytes: false,
       accessNotice:
-        'Instagram Reels menerapkan otentikasi ketat dan memblokir cross-origin media scraping di browser. Gunakan upload file video langsung untuk pemrosesan akurat.',
+        'Instagram Reel terdeteksi! Klip dapat dipratinjau di Studio Player dan dirender ke video MP4 langsung dari browser.',
     };
   }
 
-  async getMediaAccess(_input: string | File, backendUrl?: string): Promise<MediaAccessResult> {
-    if (backendUrl) {
-      return { canExtractDirectBytes: true };
-    }
+  async getMediaAccess(input: string | File, backendUrl?: string): Promise<MediaAccessResult> {
+    const url = typeof input === 'string' ? input.trim() : '';
+    const match = url.match(/instagram\.com\/(?:reel|reels|p|tv|share)\/([a-zA-Z0-9_-]+)/i);
+    const shortcode = match ? match[1] : '';
+    const embedUrl = shortcode ? `https://www.instagram.com/reel/${shortcode}/embed` : undefined;
+
     return {
-      canExtractDirectBytes: false,
-      warningNotice:
-        'Meta/Instagram membatasi akses video eksternal. Silakan unduh video lalu unggah langsung menggunakan fitur Upload Video Lokal.',
+      canExtractDirectBytes: !!backendUrl,
+      sourceEmbedUrl: embedUrl,
+      warningNotice: !backendUrl
+        ? 'Pratinjau interaktif aktif. Anda dapat memutar klip, melihat animasi teks karaoke, dan merender video MP4 langsung di browser.'
+        : undefined,
     };
   }
 }

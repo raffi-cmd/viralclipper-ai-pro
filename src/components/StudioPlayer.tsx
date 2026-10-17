@@ -25,6 +25,8 @@ interface StudioPlayerProps {
   localVideoUrl?: string | null;
   styleConfig: SubtitleStyleConfig;
   brandingConfig: BrandingConfig;
+  aspectRatio?: '9:16' | '1:1' | '16:9';
+  onAspectRatioChange?: (ratio: '9:16' | '1:1' | '16:9') => void;
   onDownloadClip: (clip: ViralClip) => void;
   onOpenExportModal: () => void;
   onOpenThumbnailEditor?: () => void;
@@ -38,6 +40,8 @@ export const StudioPlayer: React.FC<StudioPlayerProps> = ({
   localVideoUrl,
   styleConfig,
   brandingConfig,
+  aspectRatio = '9:16',
+  onAspectRatioChange,
   onDownloadClip,
   onOpenExportModal,
   onOpenThumbnailEditor,
@@ -71,6 +75,21 @@ export const StudioPlayer: React.FC<StudioPlayerProps> = ({
       }
     }
   }, [clip?.id, clip?.durationSec, clip?.renderedVideoUrl, localVideoUrl]);
+
+  // Smooth real-time simulation ticker when effectiveVideoSrc is not a direct video element
+  useEffect(() => {
+    if (effectiveVideoSrc || !isPlaying) return;
+    const interval = setInterval(() => {
+      setCurrentTime((prev) => {
+        if (prev >= duration) {
+          setIsPlaying(false);
+          return 0;
+        }
+        return +(prev + 0.1).toFixed(1);
+      });
+    }, 100);
+    return () => clearInterval(interval);
+  }, [effectiveVideoSrc, isPlaying, duration]);
 
   // Handle play/pause
   const togglePlay = () => {
@@ -182,8 +201,8 @@ export const StudioPlayer: React.FC<StudioPlayerProps> = ({
       ref={containerRef}
       className="flex flex-col items-center justify-between bg-[#12141a] border border-neutral-800/80 rounded-2xl p-3 sm:p-4 h-auto lg:h-[640px] w-full shadow-2xl relative"
     >
-      {/* Top Bar: Mode Selector & Duration Info */}
-      <div className="w-full flex items-center justify-between pb-2 border-b border-neutral-800/80 text-xs">
+      {/* Top Bar: Mode Selector & Aspect Ratio & Duration Info */}
+      <div className="w-full flex flex-wrap items-center justify-between pb-2 border-b border-neutral-800/80 text-xs gap-2">
         <div className="flex items-center gap-2">
           <div className="flex bg-[#090a0f] p-0.5 rounded-lg border border-neutral-800">
             <button
@@ -195,7 +214,7 @@ export const StudioPlayer: React.FC<StudioPlayerProps> = ({
               }`}
             >
               <Film className="w-3 h-3 text-indigo-300" />
-              <span>Klip 9:16 Portrait</span>
+              <span>Studio Klip</span>
             </button>
             {sourceEmbedUrl && (
               <button
@@ -211,6 +230,25 @@ export const StudioPlayer: React.FC<StudioPlayerProps> = ({
               </button>
             )}
           </div>
+
+          {/* Aspect Ratio Selector (9:16, 1:1, 16:9) */}
+          {onAspectRatioChange && (
+            <div className="flex bg-[#090a0f] p-0.5 rounded-lg border border-neutral-800 items-center">
+              {(['9:16', '1:1', '16:9'] as const).map((ratio) => (
+                <button
+                  key={ratio}
+                  onClick={() => onAspectRatioChange(ratio)}
+                  className={`px-2 py-0.5 rounded text-[10px] font-bold transition-all ${
+                    aspectRatio === ratio
+                      ? 'bg-indigo-500/25 text-indigo-300 border border-indigo-500/40'
+                      : 'text-neutral-500 hover:text-neutral-300 border border-transparent'
+                  }`}
+                >
+                  {ratio}
+                </button>
+              ))}
+            </div>
+          )}
         </div>
 
         {clip && (
@@ -225,8 +263,16 @@ export const StudioPlayer: React.FC<StudioPlayerProps> = ({
         )}
       </div>
 
-      {/* Main 9:16 Portrait Canvas (Rendered Media Element - ZERO Ads, Playable!) */}
-      <div className="relative w-full max-w-[270px] aspect-[9/16] rounded-2xl overflow-hidden border-2 border-neutral-800 shadow-2xl bg-black flex items-center justify-center select-none my-3 sm:my-auto">
+      {/* Main Video Canvas (Responsive to 9:16, 1:1, 16:9 Aspect Ratios) */}
+      <div
+        className={`relative ${
+          aspectRatio === '1:1'
+            ? 'w-full max-w-[340px] aspect-square'
+            : aspectRatio === '16:9'
+            ? 'w-full max-w-[480px] aspect-video'
+            : 'w-full max-w-[270px] aspect-[9/16]'
+        } rounded-2xl overflow-hidden border-2 border-neutral-800 shadow-2xl bg-black flex items-center justify-center select-none my-3 sm:my-auto transition-all`}
+      >
         {playerMode === 'rendered_clip' ? (
           <>
             {/* Background Blur */}
@@ -266,11 +312,31 @@ export const StudioPlayer: React.FC<StudioPlayerProps> = ({
               )}
             </div>
 
-            {/* Dynamic Hook Banner (Detik 0 - 3.5) - NOT Hardcoded! */}
-            {brandingConfig.showHookBanner && (currentTime <= 3.5 || !isPlaying) && (
-              <div className="absolute top-6 left-3 right-3 z-20 pointer-events-none">
-                <div className="bg-red-600/95 text-white font-black text-[10px] sm:text-[11px] uppercase tracking-wider px-3 py-1.5 rounded-lg text-center shadow-xl border border-red-400/40">
-                  🚨 {clip?.hookHeadline || 'TONTON SAMPAI SELESAI!'}
+            {/* Dynamic 5-Second Attention Retention Hook Banner */}
+            {brandingConfig.showHookBanner && (currentTime <= 5.0 || !isPlaying) && (
+              <div className="absolute top-4 left-3 right-3 z-20 pointer-events-none animate-in fade-in">
+                <div className="bg-gradient-to-r from-red-600 via-rose-600 to-amber-600 text-white rounded-xl p-2 shadow-2xl border border-yellow-300/80">
+                  <div className="flex items-center justify-between text-[9px] font-black uppercase tracking-wider text-yellow-200 mb-0.5">
+                    <span className="flex items-center gap-1">
+                      <Sparkles className="w-3 h-3 text-yellow-300" />
+                      HOOK 5 DETIK PERTAMA
+                    </span>
+                    <span className="font-mono bg-black/40 px-1 rounded text-yellow-300">
+                      {Math.max(0, 5.0 - currentTime).toFixed(1)}s
+                    </span>
+                  </div>
+                  <div className="font-black text-[11px] sm:text-xs uppercase tracking-tight text-white drop-shadow-md truncate">
+                    🚨 {clip?.hookHeadline || 'TONTON SAMPAI SELESAI!'}
+                  </div>
+                  {/* Retention countdown indicator */}
+                  <div className="w-full h-1 bg-black/40 rounded-full mt-1.5 overflow-hidden">
+                    <div
+                      className="h-full bg-yellow-300 transition-all duration-100 ease-linear rounded-full"
+                      style={{
+                        width: `${Math.max(0, Math.min(100, (1 - currentTime / 5.0) * 100))}%`,
+                      }}
+                    />
+                  </div>
                 </div>
               </div>
             )}

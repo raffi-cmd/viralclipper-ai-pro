@@ -227,23 +227,56 @@ export class ClientVideoRenderer {
           ctx.fillRect(0, 0, canvas.width, canvas.height);
         }
 
-        // 3. Render Hook Banner (First 3 seconds)
-        if (brandingConfig.showHookBanner && currentClipSec <= 3.5) {
+        // 3. Render High-Retention Hook Banner (First 5 seconds)
+        if (brandingConfig.showHookBanner && currentClipSec <= 5.0) {
           ctx.save();
-          ctx.fillStyle = '#dc2626';
+          // Dynamic gradient banner for maximum visual contrast & hook
+          const hookGrad = ctx.createLinearGradient(35, 100, canvas.width - 35, 190);
+          hookGrad.addColorStop(0, '#dc2626');
+          hookGrad.addColorStop(1, '#ea580c');
+          ctx.fillStyle = hookGrad;
+
+          const bannerW = canvas.width - 70;
+          const bannerH = 84;
+          const bannerY = 105;
+
           if (ctx.roundRect) {
             ctx.beginPath();
-            ctx.roundRect(35, 110, canvas.width - 70, 80, 20);
+            ctx.roundRect(35, bannerY, bannerW, bannerH, 18);
             ctx.fill();
           } else {
-            ctx.fillRect(35, 110, canvas.width - 70, 80);
+            ctx.fillRect(35, bannerY, bannerW, bannerH);
           }
 
+          // Border outline
+          ctx.strokeStyle = '#fef08a';
+          ctx.lineWidth = 3;
+          if (ctx.roundRect) {
+            ctx.beginPath();
+            ctx.roundRect(35, bannerY, bannerW, bannerH, 18);
+            ctx.stroke();
+          }
+
+          // Top badge
+          ctx.fillStyle = '#fef08a';
+          ctx.font = `bold 16px ${styleConfig.fontFamily}, sans-serif`;
+          ctx.textAlign = 'center';
+          ctx.textBaseline = 'top';
+          ctx.fillText('⚡ HOOK VIRAL (5 DETIK PERTAMA)', canvas.width / 2, bannerY + 10);
+
+          // Hook headline text
           ctx.fillStyle = '#ffffff';
-          ctx.font = `bold 28px ${styleConfig.fontFamily}, sans-serif`;
+          ctx.font = `900 24px ${styleConfig.fontFamily}, sans-serif`;
           ctx.textAlign = 'center';
           ctx.textBaseline = 'middle';
-          ctx.fillText(`🚨 ${(brandingConfig.hookBannerText || hookText).toUpperCase().slice(0, 34)}`, canvas.width / 2, 150);
+          ctx.fillText(`🚨 ${(brandingConfig.hookBannerText || hookText).toUpperCase().slice(0, 36)}`, canvas.width / 2, bannerY + 46);
+
+          // 5-second attention retention progress bar
+          const hookProgress = Math.max(0, Math.min(1, currentClipSec / 5.0));
+          ctx.fillStyle = '#fde047';
+          const progW = bannerW * (1 - hookProgress);
+          ctx.fillRect(35, bannerY + bannerH - 5, progW, 5);
+
           ctx.restore();
         }
 

@@ -94,7 +94,7 @@ const server = http.createServer((req, res) => {
           const bannerY = aspectRatio === '16:9' ? 60 : 180;
           const textY = aspectRatio === '16:9' ? 100 : 220;
           const bannerW = targetW - 120;
-          filterGraph += `;[v_base]drawbox=x=60:y=${bannerY}:w=${bannerW}:h=120:color=red@0.9:t=fill:enable='between(t,0,3)',drawtext=fontfile='${fontPath}':text='${hookText}':x=(w-text_w)/2:y=${textY}:fontsize=44:fontcolor=white:enable='between(t,0,3)',drawtext=fontfile='${fontPath}':text='@${watermark}':x=w-tw-50:y=h-th-50:fontsize=26:fontcolor=white@0.7[v_out]`;
+          filterGraph += `;[v_base]drawbox=x=60:y=${bannerY}:w=${bannerW}:h=120:color=red@0.9:t=fill:enable='between(t,0,5)',drawtext=fontfile='${fontPath}':text='${hookText}':x=(w-text_w)/2:y=${textY}:fontsize=44:fontcolor=white:enable='between(t,0,5)',drawtext=fontfile='${fontPath}':text='@${watermark}':x=w-tw-50:y=h-th-50:fontsize=26:fontcolor=white@0.7[v_out]`;
         } else {
           filterGraph += `;[v_base]null[v_out]`;
         }

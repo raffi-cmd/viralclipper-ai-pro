@@ -131,6 +131,7 @@ export default function Dashboard() {
   });
 
   // Export Modal & Thumbnail Editor Modal
+  const [studioAspectRatio, setStudioAspectRatio] = useState<'9:16' | '1:1' | '16:9'>('9:16');
   const [isExportOpen, setIsExportOpen] = useState(false);
   const [clipsToExport, setClipsToExport] = useState<ViralClip[]>([]);
   const [isThumbnailEditorOpen, setIsThumbnailEditorOpen] = useState(false);
@@ -285,9 +286,10 @@ export default function Dashboard() {
         mediaFile: localVideoFile || undefined,
       });
 
-      // 4. Set thumbnails from real video frames if available
+      // 4. Set thumbnails from real video frames if available (Each clip gets a UNIQUE, attention-grabbing thumbnail)
       const topic = ThumbnailEngine.detectTopic(metadata.title);
-      for (const c of detectedClips) {
+      for (let idx = 0; idx < detectedClips.length; idx++) {
+        const c = detectedClips[idx];
         const frames = await ThumbnailEngine.extractClipFrames({
           videoElement: hiddenVideoRef.current,
           youtubeId,
@@ -295,6 +297,7 @@ export default function Dashboard() {
           durationSec: c.durationSec,
           fallbackImage: metadata.thumbnailUrl,
           topic,
+          clipIndex: idx,
         });
         if (frames.length > 0) {
           (c as any).customThumbnailUrl = frames[0].imageUrl;
@@ -345,27 +348,11 @@ export default function Dashboard() {
     }
   };
 
-  // Direct 1-Click Download of Active Clip
+  // Direct 1-Click Download of Active Clip (Outputs REAL MP4 Video File Directly!)
   const handleDirectDownloadClip = async (clip: ViralClip) => {
-    showToast(`Merender & mengunduh Klip #${clip.rank}...`);
+    showToast(`Merender & mengunduh video MP4 Klip #${clip.rank} (${studioAspectRatio})...`);
 
-    // 1. Download Subtitle SRT
-    const srt = SubtitleFileExporter.generateSRT(clip.subtitles);
-    SubtitleFileExporter.downloadBlob(
-      srt,
-      `${clip.title.slice(0, 25)}_rank${clip.rank}.srt`,
-      'text/plain;charset=utf-8'
-    );
-
-    // 2. Download Copywriting
-    const txt = `=== VIRALCLIPPER AI PRO ===\nKLIP #${clip.rank} (${clip.durationSec}s)\nRENTANG TIMELINE: Detik ${clip.startSec} sampai ${clip.endSec}\n\n[HOOK]\n${clip.hookHeadline}\n\n[CAPTION]\n${clip.copywriting.caption}\n\n[HASHTAGS]\n${clip.copywriting.hashtags.join(' ')}\n`;
-    SubtitleFileExporter.downloadBlob(
-      txt,
-      `${clip.title.slice(0, 25)}_rank${clip.rank}_copywriting.txt`,
-      'text/plain;charset=utf-8'
-    );
-
-    // 3. Render physical MP4 9:16 Video file
+    // Render physical MP4 Video file directly (Zero unwanted .srt or .txt file dumps!)
     try {
       const renderResult = await ClientVideoRenderer.renderClip({
         localMediaUrl: localVideoUrl || undefined,
@@ -376,6 +363,7 @@ export default function Dashboard() {
         subtitles: clip.subtitles,
         styleConfig,
         brandingConfig,
+        aspectRatio: studioAspectRatio,
       });
 
       // Update clip with rendered video object URL so it immediately plays in Studio Player!
@@ -387,6 +375,7 @@ export default function Dashboard() {
         )
       );
 
+      // Trigger direct download of the actual video file
       const a = document.createElement('a');
       a.href = renderResult.blobUrl;
       a.download = renderResult.fileName;
@@ -394,9 +383,10 @@ export default function Dashboard() {
       a.click();
       document.body.removeChild(a);
 
-      showToast(`Video MP4 Klip #${clip.rank} berhasil diunduh!`);
+      showToast(`Video MP4 Klip #${clip.rank} (${studioAspectRatio}) berhasil diunduh!`);
     } catch (e: any) {
       console.warn('Render notice:', e);
+      showToast('Gagal merender video: ' + (e?.message || 'Error'));
     }
   };
 
@@ -799,6 +789,8 @@ export default function Dashboard() {
                   localVideoUrl={localVideoUrl}
                   styleConfig={styleConfig}
                   brandingConfig={brandingConfig}
+                  aspectRatio={studioAspectRatio}
+                  onAspectRatioChange={setStudioAspectRatio}
                   onDownloadClip={handleDirectDownloadClip}
                   onOpenExportModal={() => {
                     if (activeClip) {

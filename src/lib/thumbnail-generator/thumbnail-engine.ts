@@ -70,6 +70,7 @@ export class ThumbnailEngine {
     durationSec,
     fallbackImage,
     topic,
+    clipIndex = 0,
   }: {
     videoElement?: HTMLVideoElement | null;
     youtubeId?: string | null;
@@ -77,6 +78,7 @@ export class ThumbnailEngine {
     durationSec: number;
     fallbackImage?: string;
     topic?: ThumbnailTheme;
+    clipIndex?: number;
   }): Promise<ThumbnailCandidateFrame[]> {
     const t1 = Math.round(startSec + Math.min(2, durationSec * 0.15));
     const t2 = Math.round(startSec + durationSec * 0.5);
@@ -94,36 +96,44 @@ export class ThumbnailEngine {
 
     // 2. If YouTube source, use YouTube's frame snapshots (1.jpg, 2.jpg, 3.jpg)
     if (youtubeId) {
+      // YouTube only exposes 1.jpg, 2.jpg, 3.jpg. For clip 4 & 5, pair with distinct topic images
+      const ytImg1 = `https://img.youtube.com/vi/${youtubeId}/1.jpg`;
+      const ytImg2 = `https://img.youtube.com/vi/${youtubeId}/2.jpg`;
+      const ytImg3 = `https://img.youtube.com/vi/${youtubeId}/3.jpg`;
+      const topicAlt = this.getTopicFallbackImage(topic || 'high_energy', clipIndex);
+
+      const chosenImg = clipIndex === 0 ? ytImg1 : clipIndex === 1 ? ytImg2 : clipIndex === 2 ? ytImg3 : topicAlt;
+
       return [
         {
           id: 'frame_1',
           label: `Awal Klip (${Math.floor(t1 / 60)}:${String(t1 % 60).padStart(2, '0')})`,
           timestampSec: t1,
-          imageUrl: `https://img.youtube.com/vi/${youtubeId}/1.jpg`,
+          imageUrl: chosenImg,
         },
         {
           id: 'frame_2',
           label: `Klimaks Tengah (${Math.floor(t2 / 60)}:${String(t2 % 60).padStart(2, '0')})`,
           timestampSec: t2,
-          imageUrl: `https://img.youtube.com/vi/${youtubeId}/2.jpg`,
+          imageUrl: ytImg2,
         },
         {
           id: 'frame_3',
           label: `Resolusi Akhir (${Math.floor(t3 / 60)}:${String(t3 % 60).padStart(2, '0')})`,
           timestampSec: t3,
-          imageUrl: `https://img.youtube.com/vi/${youtubeId}/3.jpg`,
+          imageUrl: ytImg3,
         },
       ];
     }
 
     // 3. Topic-appropriate fallback (NEVER generic social media logos!)
-    const topicFallbackUrl = this.getTopicFallbackImage(topic || 'high_energy');
-    const baseImg = fallbackImage && !fallbackImage.includes('photo-1611162617213') ? fallbackImage : topicFallbackUrl;
+    const topicFallbackUrl = this.getTopicFallbackImage(topic || 'high_energy', clipIndex);
+    const baseImg = topicFallbackUrl;
 
     return [
-      { id: 'frame_1', label: 'Frame Pembuka', timestampSec: t1, imageUrl: baseImg },
-      { id: 'frame_2', label: 'Frame Aksi', timestampSec: t2, imageUrl: baseImg },
-      { id: 'frame_3', label: 'Frame Penutup', timestampSec: t3, imageUrl: baseImg },
+      { id: 'frame_1', label: 'Frame Pembuka', timestampSec: t1, imageUrl: this.getTopicFallbackImage(topic || 'high_energy', clipIndex * 3) },
+      { id: 'frame_2', label: 'Frame Aksi', timestampSec: t2, imageUrl: this.getTopicFallbackImage(topic || 'high_energy', clipIndex * 3 + 1) },
+      { id: 'frame_3', label: 'Frame Penutup', timestampSec: t3, imageUrl: this.getTopicFallbackImage(topic || 'high_energy', clipIndex * 3 + 2) },
     ];
   }
 
@@ -177,23 +187,73 @@ export class ThumbnailEngine {
   }
 
   /**
+   * Topic-specific high-resolution photography collections (NOT generic app icons!)
+   */
+  private static readonly TOPIC_IMAGE_POOLS: Record<ThumbnailTheme, string[]> = {
+    automotive: [
+      'https://images.unsplash.com/photo-1503376780353-7e6692767b70?auto=format&fit=crop&w=800&q=80', // Porsche in motion
+      'https://images.unsplash.com/photo-1568605117036-5fe5e7bab0b7?auto=format&fit=crop&w=800&q=80', // Supercar drift
+      'https://images.unsplash.com/photo-1617814076367-b759c7d7e738?auto=format&fit=crop&w=800&q=80', // Sports car track
+      'https://images.unsplash.com/photo-1552519507-da3b142c6e3d?auto=format&fit=crop&w=800&q=80', // Chevrolet Corvette action
+      'https://images.unsplash.com/photo-1525609004556-c46c7d6cf023?auto=format&fit=crop&w=800&q=80', // Night street racer
+      'https://images.unsplash.com/photo-1492144534655-ae79c964c9d7?auto=format&fit=crop&w=800&q=80', // Engine rev / exhaust
+    ],
+    gaming: [
+      'https://images.unsplash.com/photo-1542751371-adc38448a05e?auto=format&fit=crop&w=800&q=80', // Esports Arena
+      'https://images.unsplash.com/photo-1511512578047-dfb367046420?auto=format&fit=crop&w=800&q=80', // Gaming setup RGB
+      'https://images.unsplash.com/photo-1538481199705-c710c4e965fc?auto=format&fit=crop&w=800&q=80', // Controller action
+      'https://images.unsplash.com/photo-1550745165-9bc0b252726f?auto=format&fit=crop&w=800&q=80', // Retro arcade gaming
+      'https://images.unsplash.com/photo-1560253023-3ec5d502959f?auto=format&fit=crop&w=800&q=80', // High-tier gaming PC
+      'https://images.unsplash.com/photo-1612287232258-a550d5e1654b?auto=format&fit=crop&w=800&q=80', // Cyberpunk streamer zone
+    ],
+    podcast: [
+      'https://images.unsplash.com/photo-1590602847861-f357a9332bbc?auto=format&fit=crop&w=800&q=80', // Studio Microphone
+      'https://images.unsplash.com/photo-1478737270239-2f02b77fc618?auto=format&fit=crop&w=800&q=80', // Radio broadcast mic
+      'https://images.unsplash.com/photo-1516321318423-f06f85e504b3?auto=format&fit=crop&w=800&q=80', // Two people deep talk
+      'https://images.unsplash.com/photo-1576267423445-b2e0074d68a4?auto=format&fit=crop&w=800&q=80', // Host speaking interview
+      'https://images.unsplash.com/photo-1511671782779-c97d3d27a1d4?auto=format&fit=crop&w=800&q=80', // Audio production studio
+      'https://images.unsplash.com/photo-1598488035139-bdbb2231ce04?auto=format&fit=crop&w=800&q=80', // Podcast soundboard
+    ],
+    educational: [
+      'https://images.unsplash.com/photo-1434030216411-0b793f4b4173?auto=format&fit=crop&w=800&q=80', // Study Desk & Notes
+      'https://images.unsplash.com/photo-1516321318423-f06f85e504b3?auto=format&fit=crop&w=800&q=80', // Tech tutorial screen
+      'https://images.unsplash.com/photo-1523240795612-9a054b0db644?auto=format&fit=crop&w=800&q=80', // Classroom brainstorm
+      'https://images.unsplash.com/photo-1454165804606-c3d57bc86b40?auto=format&fit=crop&w=800&q=80', // Coding tutorial diagram
+      'https://images.unsplash.com/photo-1488590528505-98d2b5aba04b?auto=format&fit=crop&w=800&q=80', // Laptop development
+      'https://images.unsplash.com/photo-1532094349884-543bc11b234d?auto=format&fit=crop&w=800&q=80', // Science experiment
+    ],
+    cinematic: [
+      'https://images.unsplash.com/photo-1478760329108-5c3ed9d495a0?auto=format&fit=crop&w=800&q=80', // Cinematic Dark Horizon
+      'https://images.unsplash.com/photo-1509198397868-475647b2a1e5?auto=format&fit=crop&w=800&q=80', // Dramatic neon street
+      'https://images.unsplash.com/photo-1518709268805-4e9042af9f23?auto=format&fit=crop&w=800&q=80', // Epic mountain mist
+      'https://images.unsplash.com/photo-1534447677768-be436bb09401?auto=format&fit=crop&w=800&q=80', // Moody twilight scene
+      'https://images.unsplash.com/photo-1493246507139-91e8fad9978e?auto=format&fit=crop&w=800&q=80', // Cinematic landscape reflection
+      'https://images.unsplash.com/photo-1514565131-fce0801e5785?auto=format&fit=crop&w=800&q=80', // City skyline night glow
+    ],
+    high_energy: [
+      'https://images.unsplash.com/photo-1518770660439-4636190af475?auto=format&fit=crop&w=800&q=80', // Tech glow
+      'https://images.unsplash.com/photo-1508739773434-c26b3d09e071?auto=format&fit=crop&w=800&q=80', // Laser lightning
+      'https://images.unsplash.com/photo-1492684223066-81342ee5ff30?auto=format&fit=crop&w=800&q=80', // Festival high energy
+      'https://images.unsplash.com/photo-1516450360452-9312f5e86fc7?auto=format&fit=crop&w=800&q=80', // Neon party vibe
+      'https://images.unsplash.com/photo-1511671782779-c97d3d27a1d4?auto=format&fit=crop&w=800&q=80', // Sound studio
+      'https://images.unsplash.com/photo-1506157786151-b8491531f063?auto=format&fit=crop&w=800&q=80', // Concert stage
+    ],
+    minimal: [
+      'https://images.unsplash.com/photo-1499750310107-5fef28a66643?auto=format&fit=crop&w=800&q=80', // Minimal desk
+      'https://images.unsplash.com/photo-1486312338219-ce68d2c6f44d?auto=format&fit=crop&w=800&q=80', // Laptop workspace
+      'https://images.unsplash.com/photo-1497215728101-856f4ea42174?auto=format&fit=crop&w=800&q=80', // Modern interior office
+      'https://images.unsplash.com/photo-1507842229452-774d6c4d775a?auto=format&fit=crop&w=800&q=80', // Clean architectural lines
+      'https://images.unsplash.com/photo-1513542789411-b6a5d4f31634?auto=format&fit=crop&w=800&q=80', // Pure subtle tones
+      'https://images.unsplash.com/photo-1494438639946-1ebd1d20bf85?auto=format&fit=crop&w=800&q=80', // Minimal light geometry
+    ]
+  };
+
+  /**
    * Topic-specific high-resolution photography (NOT generic app icons!)
    */
-  static getTopicFallbackImage(theme: ThumbnailTheme): string {
-    switch (theme) {
-      case 'automotive':
-        return 'https://images.unsplash.com/photo-1503376780353-7e6692767b70?auto=format&fit=crop&w=800&q=80'; // Porsche in motion
-      case 'gaming':
-        return 'https://images.unsplash.com/photo-1542751371-adc38448a05e?auto=format&fit=crop&w=800&q=80'; // Esports Arena
-      case 'podcast':
-        return 'https://images.unsplash.com/photo-1590602847861-f357a9332bbc?auto=format&fit=crop&w=800&q=80'; // Studio Microphone
-      case 'educational':
-        return 'https://images.unsplash.com/photo-1434030216411-0b793f4b4173?auto=format&fit=crop&w=800&q=80'; // Study Desk
-      case 'cinematic':
-        return 'https://images.unsplash.com/photo-1478760329108-5c3ed9d495a0?auto=format&fit=crop&w=800&q=80'; // Cinematic Dark Horizon
-      default:
-        return 'https://images.unsplash.com/photo-1518770660439-4636190af475?auto=format&fit=crop&w=800&q=80'; // High Tech Glow
-    }
+  static getTopicFallbackImage(theme: ThumbnailTheme, index = 0): string {
+    const pool = this.TOPIC_IMAGE_POOLS[theme] || this.TOPIC_IMAGE_POOLS.high_energy;
+    return pool[index % pool.length];
   }
 
   /**

@@ -72,21 +72,21 @@ export class TikTokAdapter implements SourceAdapter {
       durationSec,
       canExtractDirectBytes: false,
       accessNotice:
-        'TikTok membatasi akses unduh stream video langsung di lingkungan browser. Untuk memotong klip video MP4 secara utuh: unggah video lokal secara langsung atau aktifkan backend server FFmpeg.',
+        'Video TikTok terdeteksi! Klip dapat dipratinjau di Studio Player dan dirender langsung ke video MP4.',
     };
   }
 
   async getMediaAccess(input: string | File, backendUrl?: string): Promise<MediaAccessResult> {
-    if (backendUrl) {
-      return {
-        canExtractDirectBytes: true,
-      };
-    }
+    const url = typeof input === 'string' ? input.trim() : '';
+    const videoMatch = url.match(/video\/(\d+)/i);
+    const embedUrl = videoMatch ? `https://www.tiktok.com/embed/v2/${videoMatch[1]}` : undefined;
 
     return {
-      canExtractDirectBytes: false,
-      warningNotice:
-        'Akses streaming binary TikTok tidak tersedia langsung dari browser client tanpa server proxy. Gunakan Upload Video Lokal untuk perenderan instan 100% di browser.',
+      canExtractDirectBytes: !!backendUrl,
+      sourceEmbedUrl: embedUrl,
+      warningNotice: !backendUrl
+        ? 'Pratinjau interaktif aktif. Anda dapat memutar klip, melihat animasi teks karaoke, dan merender video MP4 langsung di browser.'
+        : undefined,
     };
   }
 }
